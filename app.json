@@ -1,29 +1,22 @@
 {
   "expo": {
-    "name": "Planer Nano Pro",
+    "name": "Planar Nano Pro",
     "slug": "planer-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "package": "com.ozgur.planerpro",
       "adaptiveIcon": {
-        "foregroundImage": "./adaptive-icon.png",
         "backgroundColor": "#ffffff"
       }
     },
     "extra": {
       "eas": {
-        "projectId": "4375490d-48be-491f-84d7-068be4478ad3"
+        "projectId": "4375490d-48be-491f-8dd7-068be4478ad3"
       }
     }
   }
