@@ -12,6 +12,9 @@
       "package": "com.ozgur.planerpro",
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
+      },
+      "splash": {
+        "backgroundColor": "#ffffff"
       }
     },
     "extra": {
