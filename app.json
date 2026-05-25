@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Planer Nano Pro",
+    "name": "Schichtplaner",
     "slug": "planer-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -13,7 +13,7 @@
     "android": {
       "package": "com.ozgur.planerpro",
       "adaptiveIcon": {
-        "foregroundImage": "./adaptive-icon.png",
+        "foregroundImage": "./icon.png",
         "backgroundColor": "#ffffff"
       },
       "splash": {
