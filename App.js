@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Modal, TextInput, StatusBar, SafeAreaView, Alert, Share } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('Tabelle');
+  const [activeTab, setActiveTab] = useState('Schichten');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [nameModalVisible, setNameModalVisible] = useState(false);
@@ -17,6 +17,17 @@ export default function App() {
   const [rangeEndIdx, setRangeEndIdx] = useState(0);
   const [rangeModalVisible, setRangeModalVisible] = useState(false);
   const [selectingType, setSelectingType] = useState('start'); 
+  const [manualDateText, setManualDateText] = useState('');
+
+  // Zustände für den historischen Suchfilter
+  const [searchModalVisible, setSearchModalVisible] = useState(false);
+  const [selectedMonthFilter, setSelectedMonthFilter] = useState(''); // Format: "MM.YYYY" oder leer für aktuell
+
+  // Zustände für frei konfigurierbare manuelle Schichten im Modal
+  const [customLabel, setCustomLabel] = useState('');
+  const [customColor, setCustomColor] = useState('#9c27b0');
+
+  const customColorPalette = ['#9c27b0', '#e67e22', '#2ecc71', '#34495e', '#1abc9c', '#7f8c8d'];
 
   const initialNames = { p1: 'P1', p2: 'P2', p3: 'P3', p4: 'P4', p5: 'P5', p6: 'P6', p7: 'P7', p8: 'P8', p9: 'P9', p10: 'P10' };
   const [personNames, setPersonNames] = useState(initialNames);
@@ -26,7 +37,7 @@ export default function App() {
   const schichtTypen = [
     {l:'SV',c:'#e91e63'}, {l:'PDI',c:'#4caf50'}, {l:'STL',c:'#ffc107'},
     {l:'FHR',c:'#00bcd4'}, {l:'FD',c:'#ff80ab'}, {l:'SD',c:'#b39ddb'},
-    {l:'QS',c:'#ff9800'}, {l:'TS',c:'#9e9e9e'}
+    {l:'QS',c:'#ff9800'}, {l:'TS',c:'#9e9e9e'}, {l:'QC',c:'#009688'}
   ];
 
   const getHessenFeiertage = (jahr) => {
@@ -56,12 +67,24 @@ export default function App() {
   ]);
 
   const headerScrollRef = useRef(null);
+  const mainVerticalScrollRef = useRef(null);
+  const rowHeights = useRef({});
 
   useEffect(() => { loadData(); }, []);
+  
   useEffect(() => { 
     saveData(); 
     if (rangeEndIdx === 0 && shifts.length > 0) setRangeEndIdx(shifts.length - 1);
   }, [shifts, personNames, isDarkMode]);
+
+  useEffect(() => {
+    if (activeTab === 'Schichten' && shifts.length > 0) {
+      const timer = setTimeout(() => {
+        jumpToCurrentMonth(); 
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab]);
 
   const saveData = async () => {
     try { await AsyncStorage.setItem('@planer_nano_final_v5', JSON.stringify({shifts, personNames, isDarkMode})); } catch (e) {}
@@ -99,66 +122,122 @@ export default function App() {
     } catch (e) { Alert.alert("Fehler", "Ungültiger Code."); }
   };
 
-  const addDayFuture = () => {
-    const last = shifts[shifts.length - 1];
-    const parts = last.datum.split('.');
-    let d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-    d.setDate(d.getDate() + 1);
-    const days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
-    const newEntry = { 
-      id: Math.random().toString(), 
-      tag: days[d.getDay()], 
-      datum: `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`
-    };
-    personKeys.forEach(k => { newEntry[k] = '--'; newEntry[k+'Col'] = 'transparent'; });
-    setShifts([...shifts, newEntry]);
+  const jumpToCurrentMonth = () => {
+    mainVerticalScrollRef.current?.scrollTo({ y: 0, animated: false });
   };
 
-  const addDayPast = () => {
-    const first = shifts[0];
-    const parts = first.datum.split('.');
-    let d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-    d.setDate(d.getDate() - 1);
-    const days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
-    const newEntry = { 
-      id: Math.random().toString(), 
-      tag: days[d.getDay()], 
-      datum: `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`
-    };
-    personKeys.forEach(k => { newEntry[k] = '--'; newEntry[k+'Col'] = 'transparent'; });
-    setShifts([newEntry, ...shifts]);
-    setRangeStartIdx(prev => prev + 1);
-    setRangeEndIdx(prev => prev + 1);
+  const handleManualDateChange = (text) => {
+    const cleaned = text.replace(/[^0-9]/g, '');
+    setManualDateText(cleaned);
+
+    if (cleaned.length === 8) {
+      const tag = cleaned.substring(0, 2);
+      const monat = cleaned.substring(2, 4);
+      const jahr = cleaned.substring(4, 8);
+      const formatiertesDatum = `${tag}.${monat}.${jahr}`;
+      
+      const idx = shifts.findIndex(s => s.datum === formatiertesDatum);
+      
+      if (idx !== -1) {
+        if (selectingType === 'start') {
+          if (idx > rangeEndIdx) setRangeEndIdx(idx);
+          setRangeStartIdx(idx);
+        } else {
+          if (idx < rangeStartIdx) setRangeStartIdx(idx);
+          setRangeEndIdx(idx);
+        }
+        setRangeModalVisible(false);
+      } else {
+        Alert.alert("Fehler", `Datum ${formatiertesDatum} nicht in der Tabelle gefunden.`);
+      }
+    }
+  };
+
+  const handleManualDateSubmit = () => {
+    if (manualDateText.length < 8) {
+      Alert.alert("Fehler", "Bitte gib das Datum vollständig im Format TTMMJJJJ ein.");
+      return;
+    }
+    handleManualDateChange(manualDateText);
   };
 
   const theme = isDarkMode ? { bg: '#121212', head: '#1f1f1f', txt: '#eee', card: '#1e1e1e', acc: '#64b5f6', bor: '#333', sub: '#aaa' } 
                            : { bg: '#f8f9fa', head: '#1976d2', txt: '#222', card: 'white', acc: '#1976d2', bor: '#eee', sub: '#666' };
 
+  const filteredShifts = useMemo(() => {
+    return shifts.slice(rangeStartIdx, rangeEndIdx + 1);
+  }, [shifts, rangeStartIdx, rangeEndIdx]);
+
+  const availableMonths = useMemo(() => {
+    const monthsSet = new Set();
+    shifts.forEach(s => {
+      const parts = s.datum.split('.');
+      if(parts.length === 3) {
+        monthsSet.add(`${parts[1]}.${parts[2]}`);
+      }
+    });
+    return Array.from(monthsSet).sort((a, b) => {
+      const [mA, yA] = a.split('.').map(Number);
+      const [mB, yB] = b.split('.').map(Number);
+      return yB !== yA ? yB - yA : mB - mA; 
+    });
+  }, [shifts]);
+
+  const currentMonthShifts = useMemo(() => {
+    let targetMMYYYY = selectedMonthFilter;
+    if (!targetMMYYYY) {
+      const today = new Date();
+      targetMMYYYY = `${String(today.getMonth() + 1).padStart(2, '0')}.${today.getFullYear()}`;
+    }
+    
+    const elements = shifts.filter(s => s.datum.endsWith(targetMMYYYY));
+    return elements.length > 0 ? elements : shifts;
+  }, [shifts, selectedMonthFilter]);
+
+  const filterDisplayTitle = useMemo(() => {
+    if (!selectedMonthFilter) return "Aktueller Monat";
+    const [m, y] = selectedMonthFilter.split('.');
+    return `${monate[parseInt(m) - 1]} ${y}`;
+  }, [selectedMonthFilter]);
+
+  const applyCustomShift = () => {
+    if (!customLabel.trim()) {
+      Alert.alert("Hinweis", "Bitte gib ein Schichtkürzel ein.");
+      return;
+    }
+    setShifts(shifts.map(r => r.id === selectedCell.rowId ? {
+      ...r, 
+      [selectedCell.pk]: customLabel.trim().toUpperCase(), 
+      [selectedCell.pk+'Col']: customColor
+    } : r));
+    setModalVisible(false);
+  };
+
   const renderStatistik = () => {
-    const filteredShifts = shifts.slice(rangeStartIdx, rangeEndIdx + 1);
-    const colWidth = 32; 
+    const colWidth = 28; 
 
     return (
       <View style={{flex: 1}}>
         <View style={[styles.rangeSelector, {backgroundColor: theme.card, borderBottomColor: theme.bor}]}>
-            <TouchableOpacity style={styles.rangePart} onPress={() => { setSelectingType('start'); setRangeModalVisible(true); }}>
-                <Text style={styles.rangeLabel}>VON</Text>
-                <Text style={[styles.rangeDate, {color: theme.acc}]}>{shifts[rangeStartIdx]?.datum}</Text>
+            <TouchableOpacity style={styles.rangePart} onPress={() => { setSelectingType('start'); setManualDateText(''); setRangeModalVisible(true); }}>
+                <Text style={styles.rangeLabel}>VON (Tippen)</Text>
+                <Text style={[styles.rangeDate, {color: theme.acc}]}>{shifts[rangeStartIdx]?.datum || 'Auswählen'}</Text>
             </TouchableOpacity>
             <Ionicons name="arrow-forward" size={16} color={theme.sub} />
-            <TouchableOpacity style={styles.rangePart} onPress={() => { setSelectingType('end'); setRangeModalVisible(true); }}>
-                <Text style={styles.rangeLabel}>BIS</Text>
-                <Text style={[styles.rangeDate, {color: theme.acc}]}>{shifts[rangeEndIdx]?.datum}</Text>
+            <TouchableOpacity style={styles.rangePart} onPress={() => { setSelectingType('end'); setManualDateText(''); setRangeModalVisible(true); }}>
+                <Text style={styles.rangeLabel}>BIS (Tippen)</Text>
+                <Text style={[styles.rangeDate, {color: theme.acc}]}>{shifts[rangeEndIdx]?.datum || 'Auswählen'}</Text>
             </TouchableOpacity>
         </View>
 
-        <ScrollView style={{flex: 1}} contentContainerStyle={{padding: 10, paddingBottom: 150}}>
+        <ScrollView style={{flex: 1}} removeClippedSubviews={true} contentContainerStyle={{padding: 10, paddingBottom: 150}}>
+          
           <View style={styles.statHeader}><Ionicons name="pie-chart-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Gesamtverteilung (%)</Text></View>
           <View style={[styles.matrixCard, {backgroundColor: theme.card}]}>
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
               <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 55}]}>NAME</Text>
               <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-between'}}>
-                {schichtTypen.map((t, i) => (<View key={i} style={{width: colWidth, alignItems: 'center'}}><View style={[styles.miniBox, {backgroundColor: t.c, width: 26}]}><Text style={styles.miniBoxTxt}>{t.l}</Text></View></View>))}
+                {schichtTypen.map((t, i) => (<View key={i} style={{width: colWidth, alignItems: 'center'}}><View style={[styles.miniBox, {backgroundColor: t.c, width: 24}]}><Text style={styles.miniBoxTxt}>{t.l}</Text></View></View>))}
               </View>
             </View>
             {personKeys.map(pk => {
@@ -183,7 +262,7 @@ export default function App() {
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
               <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 55}]}>NAME</Text>
               <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-between'}}>
-                {schichtTypen.map((t, i) => (<View key={i} style={{width: colWidth, alignItems: 'center'}}><View style={[styles.miniBox, {backgroundColor: t.c, width: 26}]}><Text style={styles.miniBoxTxt}>{t.l}</Text></View></View>))}
+                {schichtTypen.map((t, i) => (<View key={i} style={{width: colWidth, alignItems: 'center'}}><View style={[styles.miniBox, {backgroundColor: t.c, width: 24}]}><Text style={styles.miniBoxTxt}>{t.l}</Text></View></View>))}
               </View>
             </View>
             {personKeys.map(pk => {
@@ -263,6 +342,27 @@ export default function App() {
               <TouchableOpacity style={[styles.backupBtn, {backgroundColor: theme.acc}]} onPress={handleImport}><Text style={styles.btnTxt}>Laden (Import)</Text></TouchableOpacity>
             </View>
           </View>
+
+          {/* Bereich für Entwicklerinformationen */}
+          <View style={[styles.statHeader, {marginTop: 25}]}><Ionicons name="information-circle-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>App-Informationen</Text></View>
+          <View style={[styles.matrixCard, styles.devCard, {backgroundColor: theme.card, borderColor: theme.bor}]}>
+            <View style={styles.devRow}>
+              <Ionicons name="code-working" size={16} color={theme.sub} style={{marginRight: 10}} />
+              <View>
+                <Text style={[styles.devLabel, {color: theme.sub}]}>Entwickler</Text>
+                <Text style={[styles.devValue, {color: theme.txt}]}>Özgür Cetin</Text>
+              </View>
+            </View>
+            <View style={[styles.devDivider, {backgroundColor: theme.bor}]} />
+            <View style={styles.devRow}>
+              <Ionicons name="mail-outline" size={16} color={theme.sub} style={{marginRight: 10}} />
+              <View>
+                <Text style={[styles.devLabel, {color: theme.sub}]}>Kontakt & Support</Text>
+                <Text style={[styles.devValue, {color: theme.txt}]}>ozgur.cetin@web.de</Text>
+              </View>
+            </View>
+          </View>
+
         </ScrollView>
       </View>
     );
@@ -271,14 +371,30 @@ export default function App() {
   return (
     <SafeAreaView style={[styles.container, {backgroundColor: theme.bg}]}>
       <StatusBar translucent backgroundColor="transparent" barStyle={isDarkMode ? "light-content" : "dark-content"} />
-      <View style={[styles.header, {backgroundColor: theme.head}]}>
-        <View style={{width: 50}} />
-        <Text style={styles.hTitle}>Planer Nano Pro</Text>
-        <TouchableOpacity style={styles.hBtn} onPress={() => setIsDarkMode(!isDarkMode)}><Ionicons name={isDarkMode ? "sunny" : "moon"} size={22} color="white" /></TouchableOpacity>
+      <View style={[styles.header, {backgroundColor: theme.head, justifyContent: 'center'}]}>
+        <Text style={styles.hTitle}>Schichtplaner</Text>
+        <TouchableOpacity style={styles.hBtnRight} onPress={() => setIsDarkMode(!isDarkMode)}>
+          <Ionicons name={isDarkMode ? "sunny" : "moon"} size={22} color="white" />
+        </TouchableOpacity>
       </View>
 
-      {activeTab === 'Tabelle' ? (
+      {activeTab === 'Schichten' ? (
         <View style={{flex: 1}}>
+          
+          <View style={[styles.searchFilterContainer, {backgroundColor: theme.card, borderBottomColor: theme.bor}]}>
+            <TouchableOpacity style={styles.searchBarButton} onPress={() => setSearchModalVisible(true)}>
+              <Ionicons name="search-outline" size={16} color={theme.acc} style={{marginRight: 8}} />
+              <Text style={[styles.searchText, {color: theme.txt}]}>
+                Zeitraum ansehen: <Text style={{color: theme.acc, fontWeight: 'bold'}}>{filterDisplayTitle}</Text>
+              </Text>
+            </TouchableOpacity>
+            {selectedMonthFilter !== '' && (
+              <TouchableOpacity style={styles.clearFilterBtn} onPress={() => setSelectedMonthFilter('')}>
+                <Ionicons name="close-circle" size={18} color="#e91e63" />
+              </TouchableOpacity>
+            )}
+          </View>
+
           <View style={{flexDirection: 'row', backgroundColor: theme.head, height: 35, alignItems: 'center'}}>
             <View style={{width: 55, alignItems: 'center'}}><Text style={styles.headLabel}>TAG</Text></View>
             <ScrollView horizontal ref={headerScrollRef} scrollEnabled={false} showsHorizontalScrollIndicator={false}>
@@ -289,15 +405,27 @@ export default function App() {
               ))}
             </ScrollView>
           </View>
-          <ScrollView style={{flex: 1}} contentContainerStyle={{paddingBottom: 150}}>
+          <ScrollView ref={mainVerticalScrollRef} style={{flex: 1}} initialNumToRender={31} removeClippedSubviews={true} contentContainerStyle={{paddingBottom: 150}}>
             <View style={{flexDirection: 'row'}}>
               <View>
-                {shifts.map((s, i) => {
+                {currentMonthShifts.map((s, i) => {
                   const ft = isHessenFeiertag(s.datum);
-                  const isNewM = i === 0 || s.datum.split('.')[1] !== shifts[i-1].datum.split('.')[1];
+                  const isNewM = i === 0 || s.datum.split('.')[1] !== currentMonthShifts[i-1].datum.split('.')[1];
+                  const currentYear = s.datum.split('.')[2];
+                  
+                  if (!rowHeights.current[s.id]) {
+                    rowHeights.current[s.id] = 45;
+                  }
+
                   return (
                     <View key={s.id}>
-                      {isNewM && <View style={styles.monthLabel}><Text style={styles.monthLabelTxt}>{monate[parseInt(s.datum.split('.')[1])-1]}</Text></View>}
+                      {isNewM && (
+                        <View style={styles.monthLabel}>
+                          <Text style={styles.monthLabelTxt}>
+                            {monate[parseInt(s.datum.split('.')[1])-1]} {currentYear}
+                          </Text>
+                        </View>
+                      )}
                       <View style={[styles.sideCell, {borderBottomColor: theme.bor, backgroundColor: ft ? (isDarkMode ? '#3d1010' : '#ffebee') : 'transparent'}]}>
                         <Text style={[styles.tagTxt, {color: (s.tag==='Sa'||s.tag==='So'||ft) ? '#e91e63' : theme.txt}]}>{s.tag}</Text>
                         <Text style={styles.dateTxt}>{s.datum.split('.')[0]}.</Text>
@@ -306,16 +434,30 @@ export default function App() {
                   );
                 })}
               </View>
-              <ScrollView horizontal onScroll={(e) => headerScrollRef.current?.scrollTo({x: e.nativeEvent.contentOffset.x, animated: false})} scrollEventThrottle={16}>
+              
+              <ScrollView 
+                horizontal 
+                cancelsTouchesInView={false}
+                keyboardShouldPersistTaps="always"
+                removeClippedSubviews={true}
+                onScroll={(e) => headerScrollRef.current?.scrollTo({x: e.nativeEvent.contentOffset.x, animated: false})} 
+                scrollEventThrottle={16}
+              >
                 <View>
-                  {shifts.map((s, i) => {
-                    const isNewM = i === 0 || s.datum.split('.')[1] !== shifts[i-1].datum.split('.')[1];
+                  {currentMonthShifts.map((s, i) => {
+                    const isNewM = i === 0 || s.datum.split('.')[1] !== currentMonthShifts[i-1].datum.split('.')[1];
                     return (
                       <View key={s.id}>
                         {isNewM && <View style={[styles.monthLabel, {width: personKeys.length * 60}]} />}
                         <View style={{flexDirection: 'row'}}>
                           {personKeys.map(pk => (
-                            <TouchableOpacity key={pk} style={[styles.cell, {backgroundColor: s[pk+'Col'], borderBottomColor: theme.bor}]} onPress={() => { setSelectedCell({rowId: s.id, pk}); setModalVisible(true); }}>
+                            <TouchableOpacity 
+                              key={pk} 
+                              delayPressIn={0}
+                              activeOpacity={0.5}
+                              style={[styles.cell, {backgroundColor: s[pk+'Col'], borderBottomColor: theme.bor}]} 
+                              onPress={() => { setSelectedCell({rowId: s.id, pk}); setCustomLabel(''); setModalVisible(true); }}
+                            >
                               <Text style={[styles.cellTxt, {color: s[pk+'Col'] === 'transparent' ? theme.txt : 'white'}]}>{s[pk]}</Text>
                             </TouchableOpacity>
                           ))}
@@ -327,43 +469,125 @@ export default function App() {
               </ScrollView>
             </View>
           </ScrollView>
-          <View style={styles.fabContainer}>
-              <TouchableOpacity style={[styles.fabSmall, {backgroundColor: theme.sub}]} onPress={addDayPast}><Ionicons name="arrow-up" size={20} color="white" /></TouchableOpacity>
-              <TouchableOpacity style={[styles.fab, {backgroundColor: theme.acc}]} onPress={addDayFuture}><Ionicons name="add" size={30} color="white" /></TouchableOpacity>
-          </View>
         </View>
       ) : renderStatistik()}
 
       <View style={[styles.tabBar, {backgroundColor: theme.card, borderTopColor: theme.bor}]}>
-        <TouchableOpacity style={styles.tab} onPress={() => setActiveTab('Tabelle')}><Ionicons name="grid" size={22} color={activeTab === 'Tabelle' ? theme.acc : '#888'} /><Text style={{fontSize: 10, color: activeTab === 'Tabelle' ? theme.acc : '#888', marginTop: 4}}>Tabelle</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.tab} onPress={() => setActiveTab('Schichten')}><Ionicons name="grid" size={22} color={activeTab === 'Schichten' ? theme.acc : '#888'} /><Text style={{fontSize: 10, color: activeTab === 'Schichten' ? theme.acc : '#888', marginTop: 4}}>Schichten</Text></TouchableOpacity>
         <TouchableOpacity style={styles.tab} onPress={() => setActiveTab('Statistik')}><Ionicons name="stats-chart" size={22} color={activeTab === 'Statistik' ? theme.acc : '#888'} /><Text style={{fontSize: 10, color: activeTab === 'Statistik' ? theme.acc : '#888', marginTop: 4}}>Statistik</Text></TouchableOpacity>
       </View>
 
+      <Modal visible={searchModalVisible} transparent animationType="fade">
+        <View style={styles.modalBack}>
+          <View style={[styles.modalBox, {backgroundColor: theme.card, maxHeight: '70%'}]}>
+            <Text style={{color: theme.txt, fontWeight: 'bold', marginBottom: 15, textAlign: 'center'}}>Zeitraum auswählen</Text>
+            <ScrollView style={{marginBottom: 15}}>
+              <TouchableOpacity 
+                style={[styles.monthFilterItem, {borderBottomColor: theme.bor, backgroundColor: selectedMonthFilter === '' ? theme.bg : 'transparent'}]} 
+                onPress={() => { setSelectedMonthFilter(''); setSearchModalVisible(false); }}
+              >
+                <Text style={{color: theme.txt, fontWeight: 'bold'}}>Aktueller Monat (Automatisch)</Text>
+              </TouchableOpacity>
+              {availableMonths.map(mStr => {
+                const [m, y] = mStr.split('.');
+                const label = `${monate[parseInt(m) - 1]} ${y}`;
+                return (
+                  <TouchableOpacity 
+                    key={mStr} 
+                    style={[styles.monthFilterItem, {borderBottomColor: theme.bor, backgroundColor: selectedMonthFilter === mStr ? theme.bg : 'transparent'}]} 
+                    onPress={() => { setSelectedMonthFilter(mStr); setSearchModalVisible(false); }}
+                  >
+                    <Text style={{color: theme.txt}}>{label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity style={[styles.saveBtn, {backgroundColor: '#9e9e9e'}]} onPress={() => setSearchModalVisible(false)}>
+              <Text style={{color: 'white', fontWeight: 'bold'}}>Abbrechen</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={rangeModalVisible} transparent animationType="fade">
-          <View style={styles.modalBack}><View style={[styles.modalBox, {backgroundColor: theme.card, height: '70%'}]}>
-              <ScrollView>{shifts.map((s, idx) => (
-                  <TouchableOpacity key={s.id} style={[styles.rangeItem, {borderBottomColor: theme.bor}]} onPress={() => {
-                      if (selectingType === 'start') { if (idx > rangeEndIdx) setRangeEndIdx(idx); setRangeStartIdx(idx); } 
-                      else { if (idx < rangeStartIdx) setRangeStartIdx(idx); setRangeEndIdx(idx); }
-                      setRangeModalVisible(false);
-                  }}><Text style={{color: theme.txt, fontSize: 16}}>{s.datum} ({s.tag})</Text></TouchableOpacity>
-              ))}</ScrollView>
-          </View></View>
+          <View style={styles.modalBack}>
+            <View style={[styles.modalBox, {backgroundColor: theme.card}]}>
+              <Text style={{color: theme.txt, fontWeight: 'bold', marginBottom: 5, textAlign: 'center'}}>Datum eingeben</Text>
+              <Text style={{color: theme.sub, fontSize: 11, marginBottom: 15, textAlign: 'center'}}>Format: TTMMJJJJ (z.B. 20042026)</Text>
+              <TextInput 
+                style={[styles.input, {color: theme.txt, borderBottomColor: theme.acc}]} 
+                value={manualDateText} 
+                onChangeText={handleManualDateChange} 
+                placeholder="TTMMJJJJ" 
+                placeholderTextColor="#666"
+                keyboardType="numeric"
+                maxLength={8}
+                autoFocus={true} 
+              />
+              <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                <TouchableOpacity style={[styles.saveBtn, {backgroundColor: '#9e9e9e', flex: 0.48}]} onPress={() => setRangeModalVisible(false)}>
+                  <Text style={{color: 'white', fontWeight: 'bold'}}>Abbrechen</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.saveBtn, {backgroundColor: theme.acc, flex: 0.48}]} onPress={handleManualDateSubmit}>
+                  <Text style={{color: 'white', fontWeight: 'bold'}}>Übernehmen</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
       </Modal>
 
       <Modal visible={modalVisible} transparent animationType="fade">
-        <View style={styles.modalBack}><View style={[styles.modalBox, {backgroundColor: theme.card}]}>
-            <View style={styles.modalGrid}>
-                {schichtTypen.map((s, i) => (<TouchableOpacity key={i} style={[styles.opt, {backgroundColor: s.c, borderRadius: 12}]} onPress={() => { setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: s.l, [selectedCell.pk+'Col']: s.c} : r)); setModalVisible(false); }}><Text style={{color: 'white', fontWeight: 'bold'}}>{s.l}</Text></TouchableOpacity>))}
-                <TouchableOpacity style={[styles.opt, {backgroundColor: isDarkMode ? '#2c2c2c' : '#f0f0f0', borderRadius: 12, borderWidth: 1, borderColor: isDarkMode ? '#444' : '#ddd'}]} onPress={() => { setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: '--', [selectedCell.pk+'Col']: 'transparent'} : r)); setModalVisible(false); }}><Ionicons name="remove-circle-outline" size={20} color={isDarkMode ? '#aaa' : '#888'} /><Text style={{color: isDarkMode ? '#aaa' : '#888', fontSize: 10}}>FREI</Text></TouchableOpacity>
+        <View style={styles.modalBack}>
+          <View style={[styles.modalBox, {backgroundColor: theme.card, width: '90%', padding: 20}]}>
+            
+            <Text style={{color: theme.sub, fontSize: 11, fontWeight: 'bold', marginBottom: 6}}>MANUELLE SCHICHT ERSTELLEN</Text>
+            <View style={[styles.customShiftContainer, {borderColor: theme.bor}]}>
+              <TextInput
+                style={[styles.customInput, {color: theme.txt, backgroundColor: isDarkMode ? '#2c2c2c' : '#f5f5f5'}]}
+                placeholder="Kürzel (z.B. NACHT)"
+                placeholderTextColor="#888"
+                maxLength={6}
+                value={customLabel}
+                onChangeText={setCustomLabel}
+              />
+              <TouchableOpacity style={[styles.customAddBtn, {backgroundColor: customColor}]} onPress={applyCustomShift}>
+                <Text style={{color: 'white', fontWeight: 'bold', fontSize: 12}}>Einfügen</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={() => setModalVisible(false)} style={{marginTop: 20}}><Text style={{color: theme.acc, textAlign: 'center'}}>Schließen</Text></TouchableOpacity>
-        </View></View>
+            
+            <View style={styles.paletteRow}>
+              {customColorPalette.map((color) => (
+                <TouchableOpacity 
+                  key={color} 
+                  style={[styles.paletteCircle, {backgroundColor: color, borderWidth: customColor === color ? 3 : 0, borderColor: theme.txt}]} 
+                  onPress={() => setCustomColor(color)}
+                />
+              ))}
+            </View>
+
+            <View style={[styles.divider, {backgroundColor: theme.bor}]} />
+
+            <Text style={{color: theme.sub, fontSize: 11, fontWeight: 'bold', marginBottom: 8}}>VORGEFERTIGTE SCHICHTEN</Text>
+            <View style={styles.modalGrid}>
+                {schichtTypen.map((s, i) => (
+                  <TouchableOpacity key={i} style={[styles.opt, {backgroundColor: s.c, borderRadius: 12}]} onPress={() => { setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: s.l, [selectedCell.pk+'Col']: s.c} : r)); setModalVisible(false); }}>
+                    <Text style={{color: 'white', fontWeight: 'bold'}}>{s.l}</Text>
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity style={[styles.opt, {backgroundColor: isDarkMode ? '#2c2c2c' : '#f0f0f0', borderRadius: 12, borderWidth: 1, borderColor: isDarkMode ? '#444' : '#ddd'}]} onPress={() => { setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: '--', [selectedCell.pk+'Col']: 'transparent'} : r)); setModalVisible(false); }}>
+                  <Ionicons name="remove-circle-outline" size={18} color={isDarkMode ? '#aaa' : '#888'} />
+                  <Text style={{color: isDarkMode ? '#aaa' : '#888', fontSize: 9, fontWeight: 'bold'}}>FREI</Text>
+                </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity onPress={() => setModalVisible(false)} style={{marginTop: 15}}><Text style={{color: theme.acc, textAlign: 'center', fontWeight: 'bold'}}>Schließen</Text></TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       <Modal visible={nameModalVisible} transparent animationType="slide">
         <View style={styles.modalBack}><View style={[styles.modalBox, {backgroundColor: theme.card}]}>
-          <TextInput style={[styles.input, {color: theme.txt, borderBottomColor: theme.acc}]} value={tempName} onChangeText={setTempName} autoFocus />
+          <TextInput style={[styles.input, {color: theme.txt, borderBottomColor: theme.acc}]} value={tempName} onChangeText={setTempName} autoFocus={true} />
           <TouchableOpacity style={[styles.saveBtn, {backgroundColor: theme.acc}]} onPress={() => { setPersonNames({...personNames, [selectedPersonKey]: tempName}); setNameModalVisible(false); }}><Text style={{color: 'white', fontWeight: 'bold'}}>Speichern</Text></TouchableOpacity>
         </View></View>
       </Modal>
@@ -371,11 +595,10 @@ export default function App() {
   );
 }
 
-// Build-Trigger: Assets neu laden
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingTop: 50, paddingBottom: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  hBtn: { paddingHorizontal: 15 },
+  header: { paddingTop: 50, paddingBottom: 15, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', position: 'relative' },
+  hBtnRight: { position: 'absolute', right: 0, paddingHorizontal: 15, bottom: 15 },
   hTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
   headLabel: { color: 'white', fontSize: 10, fontWeight: 'bold' },
   monthLabel: { backgroundColor: '#1a1a1a', height: 30, justifyContent: 'center', paddingLeft: 10 },
@@ -385,9 +608,6 @@ const styles = StyleSheet.create({
   tagTxt: { fontSize: 12, fontWeight: '600' },
   dateTxt: { fontSize: 10, color: '#999' },
   cellTxt: { fontSize: 12, fontWeight: '600' },
-  fabContainer: { position: 'absolute', bottom: 110, right: 20, alignItems: 'center' },
-  fab: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', elevation: 8 },
-  fabSmall: { width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', elevation: 6, marginBottom: 12 },
   tabBar: { flexDirection: 'row', height: 85, borderTopWidth: 1, paddingBottom: 25, paddingHorizontal: 20, position: 'absolute', bottom: 0, left: 0, right: 0 },
   tab: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   statHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingLeft: 5 },
@@ -404,14 +624,33 @@ const styles = StyleSheet.create({
   rangePart: { alignItems: 'center', flex: 1 },
   rangeLabel: { fontSize: 8, color: '#888', fontWeight: 'bold' },
   rangeDate: { fontSize: 14, fontWeight: 'bold' },
-  modalBack: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center' },
+  modalBack: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
   modalBox: { width: '85%', padding: 25, borderRadius: 24 },
-  modalGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
-  opt: { width: '28%', aspectRatio: 1, margin: 8, justifyContent: 'center', alignItems: 'center' },
-  input: { borderBottomWidth: 2, fontSize: 22, textAlign: 'center', marginBottom: 30 },
+  modalGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start' },
+  opt: { width: '22%', aspectRatio: 1, margin: '1.5%', justifyContent: 'center', alignItems: 'center', borderRadius: 10 },
+  input: { borderBottomWidth: 2, fontSize: 22, textAlign: 'center', marginBottom: 15 },
   saveBtn: { padding: 16, borderRadius: 14, alignItems: 'center' },
-  rangeItem: { padding: 18, borderBottomWidth: 0.5 },
   backupInput: { height: 80, borderWidth: 1, borderRadius: 12, padding: 10, fontSize: 10, textAlignVertical: 'top' },
   backupBtn: { padding: 12, borderRadius: 10, flex: 0.48, alignItems: 'center' },
-  btnTxt: { color: 'white', fontWeight: 'bold', fontSize: 11 }
+  btnTxt: { color: 'white', fontWeight: 'bold', fontSize: 11 },
+  customShiftContainer: { flexDirection: 'row', borderWidth: 1, borderRadius: 10, overflow: 'hidden', marginBottom: 10 },
+  customInput: { flex: 1, height: 40, paddingHorizontal: 12, fontSize: 13, fontWeight: 'bold' },
+  customAddBtn: { width: 80, justifyContent: 'center', alignItems: 'center' },
+  paletteRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15, paddingHorizontal: 5 },
+  paletteCircle: { width: 32, height: 32, borderRadius: 16 },
+  divider: { height: 1, width: '100%', marginVertical: 12 },
+  
+  searchFilterContainer: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center', borderBottomWidth: 1 },
+  searchBarButton: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.04)' },
+  searchText: { fontSize: 12, fontWeight: '500' },
+  clearFilterBtn: { paddingLeft: 10, justifyContent: 'center', alignItems: 'center' },
+  monthFilterItem: { paddingVertical: 14, paddingHorizontal: 10, borderBottomWidth: 0.5, width: '100%' },
+
+  // Neue Styles für die Entwicklerkarte
+  devCard: { borderWidth: 1, paddingVertical: 15, paddingHorizontal: 18, marginBottom: 30 },
+  devRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
+  devLabel: { fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
+  devValue: { fontSize: 14, fontWeight: 'bold' },
+  devDivider: { height: 0.5, width: '100%', marginVertical: 10 }
 });
+
