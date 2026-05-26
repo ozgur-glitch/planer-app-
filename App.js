@@ -60,10 +60,12 @@ export default function App() {
   const personKeys = Object.keys(initialNames);
   const monate = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 
+  // Aktualisierte vordefinierte Schichten inklusive HRS in exakter Wunschreihenfolge
   const schichtTypen = [
-    {l:'SV',c:'#e91e63'}, {l:'PDI',c:'#4caf50'}, {l:'STL',c:'#ffc107'},
-    {l:'FHR',c:'#00bcd4'}, {l:'FD',c:'#ff80ab'}, {l:'SD',c:'#b39ddb'},
-    {l:'QS',c:'#ff9800'}, {l:'TS',c:'#9e9e9e'}, {l:'QC',c:'#009688'}
+    {l:'SV',c:'#e91e63'}, {l:'PDI',c:'#4caf50'}, {l:'QS',c:'#ff9800'}, 
+    {l:'STL',c:'#ffc107'}, {l:'FHR',c:'#00bcd4'}, {l:'FD',c:'#ff80ab'}, 
+    {l:'SD',c:'#b39ddb'}, {l:'QC',c:'#009688'}, {l:'TS',c:'#9e9e9e'},
+    {l:'HRS',c:'#795548'}
   ];
 
   const getHessenFeiertage = (jahr) => {
@@ -88,7 +90,6 @@ export default function App() {
     return getHessenFeiertage(jahr)[datumStr] || null;
   };
 
-  // Initialisiert die App mit dem kompletten Kalenderjahr 2026 statt nur einem Tag
   const [shifts, setShifts] = useState(() => generateYear2026(Object.keys(initialNames)));
 
   const headerScrollRef = useRef(null);
@@ -151,7 +152,6 @@ export default function App() {
   };
 
   const jumpToCurrentMonth = () => {
-    // Ermittelt die Scroll-Position des aktuellen Monats basierend auf den generierten Zeilen
     let targetMMYYYY = selectedMonthFilter;
     if (!targetMMYYYY) {
       const today = new Date();
@@ -160,7 +160,6 @@ export default function App() {
     
     const targetIdx = shifts.findIndex(s => s.datum.endsWith(targetMMYYYY));
     if (targetIdx !== -1 && mainVerticalScrollRef.current) {
-      // Ungefähre Scroll-Berechnung anhand der Zeilenhöhe (45px) plus Header-Verschiebungen
       const estimatedY = targetIdx * 45;
       mainVerticalScrollRef.current.scrollTo({ y: estimatedY, animated: false });
     }
@@ -254,7 +253,7 @@ export default function App() {
   };
 
   const renderStatistik = () => {
-    const colWidth = 28; 
+    const colWidth = 26; // Leicht reduziert, um Platz für 10 Spalten zu bieten
 
     return (
       <View style={{flex: 1}}>
@@ -277,7 +276,7 @@ export default function App() {
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
               <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 55}]}>NAME</Text>
               <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-between'}}>
-                {schichtTypen.map((t, i) => (<View key={i} style={{width: colWidth, alignItems: 'center'}}><View style={[styles.miniBox, {backgroundColor: t.c, width: 24}]}><Text style={styles.miniBoxTxt}>{t.l}</Text></View></View>))}
+                {schichtTypen.map((t, i) => (<View key={i} style={{width: colWidth, alignItems: 'center'}}><View style={[styles.miniBox, {backgroundColor: t.c, width: 23}]}><Text style={styles.miniBoxTxt}>{t.l}</Text></View></View>))}
               </View>
             </View>
             {personKeys.map(pk => {
@@ -302,7 +301,7 @@ export default function App() {
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
               <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 55}]}>NAME</Text>
               <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-between'}}>
-                {schichtTypen.map((t, i) => (<View key={i} style={{width: colWidth, alignItems: 'center'}}><View style={[styles.miniBox, {backgroundColor: t.c, width: 24}]}><Text style={styles.miniBoxTxt}>{t.l}</Text></View></View>))}
+                {schichtTypen.map((t, i) => (<View key={i} style={{width: colWidth, alignItems: 'center'}}><View style={[styles.miniBox, {backgroundColor: t.c, width: 23}]}><Text style={styles.miniBoxTxt}>{t.l}</Text></View></View>))}
               </View>
             </View>
             {personKeys.map(pk => {
@@ -383,7 +382,6 @@ export default function App() {
             </View>
           </View>
 
-          {/* Bereich für Entwicklerinformationen */}
           <View style={[styles.statHeader, {marginTop: 25}]}><Ionicons name="information-circle-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>App-Informationen</Text></View>
           <View style={[styles.matrixCard, styles.devCard, {backgroundColor: theme.card, borderColor: theme.bor}]}>
             <View style={styles.devRow}>
@@ -578,7 +576,7 @@ export default function App() {
 
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalBack}>
-          <View style={[styles.modalBox, {backgroundColor: theme.card, width: '90%', padding: 20}]}>
+          <View style={[styles.modalBox, {backgroundColor: theme.card, width: '95%', padding: 15}]}>
             
             <Text style={{color: theme.sub, fontSize: 11, fontWeight: 'bold', marginBottom: 6}}>MANUELLE SCHICHT ERSTELLEN</Text>
             <View style={[styles.customShiftContainer, {borderColor: theme.bor}]}>
@@ -611,11 +609,11 @@ export default function App() {
             <View style={styles.modalGrid}>
                 {schichtTypen.map((s, i) => (
                   <TouchableOpacity key={i} style={[styles.opt, {backgroundColor: s.c, borderRadius: 12}]} onPress={() => { setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: s.l, [selectedCell.pk+'Col']: s.c} : r)); setModalVisible(false); }}>
-                    <Text style={{color: 'white', fontWeight: 'bold'}}>{s.l}</Text>
+                    <Text style={{color: 'white', fontWeight: 'bold', fontSize: 11}}>{s.l}</Text>
                   </TouchableOpacity>
                 ))}
                 <TouchableOpacity style={[styles.opt, {backgroundColor: isDarkMode ? '#2c2c2c' : '#f0f0f0', borderRadius: 12, borderWidth: 1, borderColor: isDarkMode ? '#444' : '#ddd'}]} onPress={() => { setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: '--', [selectedCell.pk+'Col']: 'transparent'} : r)); setModalVisible(false); }}>
-                  <Ionicons name="remove-circle-outline" size={18} color={isDarkMode ? '#aaa' : '#888'} />
+                  <Ionicons name="remove-circle-outline" size={16} color={isDarkMode ? '#aaa' : '#888'} />
                   <Text style={{color: isDarkMode ? '#aaa' : '#888', fontSize: 9, fontWeight: 'bold'}}>FREI</Text>
                 </TouchableOpacity>
             </View>
@@ -692,4 +690,3 @@ const styles = StyleSheet.create({
   devValue: { fontSize: 14, fontWeight: 'bold' },
   devDivider: { height: 0.5, width: '100%', marginVertical: 10 }
 });
-
