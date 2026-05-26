@@ -3,6 +3,32 @@ import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Modal, TextInput,
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// Hilfsfunktion zur Generierung des kompletten Jahres 2026 als initiale Datenbasis
+const generateYear2026 = (personKeys) => {
+  const yearData = [];
+  const startDate = new Date(2026, 0, 1); // 1. Januar 2026
+  const endDate = new Date(2026, 11, 31); // 31. Dezember 2026
+  const wochentage = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+  let idCounter = 1;
+
+  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+    const tagStr = wochentage[d.getDay()];
+    const tag = String(d.getDate()).padStart(2, '0');
+    const monat = String(d.getMonth() + 1).padStart(2, '0');
+    const jahr = d.getFullYear();
+    const datumStr = `${tag}.${monat}.${jahr}`;
+
+    yearData.push({
+      id: String(idCounter++),
+      tag: tagStr,
+      datum: datumStr,
+      ...Object.fromEntries(personKeys.map(k => [k, '--'])),
+      ...Object.fromEntries(personKeys.map(k => [k + 'Col', 'transparent']))
+    });
+  }
+  return yearData;
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('Schichten');
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -62,9 +88,8 @@ export default function App() {
     return getHessenFeiertage(jahr)[datumStr] || null;
   };
 
-  const [shifts, setShifts] = useState([
-    { id: '1', tag: 'Mo', datum: '20.04.2026', ...Object.fromEntries(personKeys.map(k => [k, '--'])), ...Object.fromEntries(personKeys.map(k => [k+'Col', 'transparent'])) }
-  ]);
+  // Initialisiert die App mit dem kompletten Kalenderjahr 2026 statt nur einem Tag
+  const [shifts, setShifts] = useState(() => generateYear2026(Object.keys(initialNames)));
 
   const headerScrollRef = useRef(null);
   const mainVerticalScrollRef = useRef(null);
@@ -95,7 +120,10 @@ export default function App() {
       const saved = await AsyncStorage.getItem('@planer_nano_final_v5');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed?.shifts) { setShifts(parsed.shifts); setRangeEndIdx(parsed.shifts.length - 1); }
+        if (parsed?.shifts && parsed.shifts.length > 0) { 
+          setShifts(parsed.shifts); 
+          setRangeEndIdx(parsed.shifts.length - 1); 
+        }
         if (parsed?.personNames) setPersonNames(parsed.personNames);
         if (parsed?.isDarkMode !== undefined) setIsDarkMode(parsed.isDarkMode);
       }
@@ -123,7 +151,19 @@ export default function App() {
   };
 
   const jumpToCurrentMonth = () => {
-    mainVerticalScrollRef.current?.scrollTo({ y: 0, animated: false });
+    // Ermittelt die Scroll-Position des aktuellen Monats basierend auf den generierten Zeilen
+    let targetMMYYYY = selectedMonthFilter;
+    if (!targetMMYYYY) {
+      const today = new Date();
+      targetMMYYYY = `${String(today.getMonth() + 1).padStart(2, '0')}.${today.getFullYear()}`;
+    }
+    
+    const targetIdx = shifts.findIndex(s => s.datum.endsWith(targetMMYYYY));
+    if (targetIdx !== -1 && mainVerticalScrollRef.current) {
+      // Ungefähre Scroll-Berechnung anhand der Zeilenhöhe (45px) plus Header-Verschiebungen
+      const estimatedY = targetIdx * 45;
+      mainVerticalScrollRef.current.scrollTo({ y: estimatedY, animated: false });
+    }
   };
 
   const handleManualDateChange = (text) => {
@@ -646,7 +686,6 @@ const styles = StyleSheet.create({
   clearFilterBtn: { paddingLeft: 10, justifyContent: 'center', alignItems: 'center' },
   monthFilterItem: { paddingVertical: 14, paddingHorizontal: 10, borderBottomWidth: 0.5, width: '100%' },
 
-  // Neue Styles für die Entwicklerkarte
   devCard: { borderWidth: 1, paddingVertical: 15, paddingHorizontal: 18, marginBottom: 30 },
   devRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
   devLabel: { fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
