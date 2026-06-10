@@ -23,14 +23,21 @@ const generateYear2026 = (personKeys) => {
       tag: tagStr,
       datum: datumStr,
       ...Object.fromEntries(personKeys.map(k => [k, '--'])),
-      ...Object.fromEntries(personKeys.map(k => [k + 'Col', 'transparent']))
+      ...Object.fromEntries(personKeys.map(k => [k + 'Col', 'transparent'])),
+      // Zusätzliche persistente Felder für manuelle Überschreibungen in "Mein Plan"
+      customStart_p1: null,
+      customEnd_p1: null,
+      customPause_p1: null,
+      customLabel_p1: null,
+      customColor_p1: null
     });
   }
   return yearData;
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('Schichten');
+  // Start-Tab ist 'MeinPlan'
+  const [activeTab, setActiveTab] = useState('MeinPlan');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [nameModalVisible, setNameModalVisible] = useState(false);
@@ -51,26 +58,78 @@ export default function App() {
 
   // Zustände für frei konfigurierbare manuelle Schichten im Modal
   const [customLabel, setCustomLabel] = useState('');
-  const [customColor, setCustomColor] = useState('#9c27b0');
+  const [customColor, setCustomColor] = useState('#e91e63');
 
-  // NEU: Zustände für den Schicht-Kopier-Modus
+  // Zustände für den Schicht-Kopier-Modus
   const [copyModeActive, setCopyModeActive] = useState(false);
   const [copiedValue, setCopiedValue] = useState(null); // { label: '...', color: '...' }
 
-  const customColorPalette = ['#9c27b0', '#e67e22', '#2ecc71', '#34495e', '#1abc9c', '#7f8c8d'];
+  // Eingegebene Soll-Stunden pro Monat
+  const [sollStunden, setSollStunden] = useState('');
+  const [sollNachtStunden, setSollNachtStunden] = useState('');
+
+  // Schichtfarben identisch mit der Palette der vorgefertigten Schichten
+  const customColorPalette = [
+    '#e91e63', '#4caf50', '#ff9800', '#ffc107', '#00bcd4', 
+    '#ff80ab', '#b39ddb', '#009688', '#9e9e9e', '#795548', '#9c27b0'
+  ];
 
   const initialNames = { p1: 'P1', p2: 'P2', p3: 'P3', p4: 'P4', p5: 'P5', p6: 'P6', p7: 'P7', p8: 'P8', p9: 'P9', p10: 'P10' };
   const [personNames, setPersonNames] = useState(initialNames);
   const personKeys = Object.keys(initialNames);
   const monate = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 
-  // Aktualisierte vordefinierte Schichten inklusive HRS in exakter Wunschreihenfolge
-  const schichtTypen = [
-    {l:'SV',c:'#e91e63'}, {l:'PDI',c:'#4caf50'}, {l:'QS',c:'#ff9800'}, 
-    {l:'STL',c:'#ffc107'}, {l:'FHR',c:'#00bcd4'}, {l:'FD',c:'#ff80ab'}, 
-    {l:'SD',c:'#b39ddb'}, {l:'QC',c:'#009688'}, {l:'TS',c:'#9e9e9e'},
-    {l:'HRS',c:'#795548'}
-  ];
+  // Vordefinierte Schichten inklusive Start-, End- und Pausenzeiten
+  const [schichtTypen, setSchichtTypen] = useState([
+    {l:'SV',c:'#e91e63', s:'06:00', e:'14:00', p:'30'}, 
+    {l:'PDI',c:'#4caf50', s:'06:00', e:'14:00', p:'30'}, 
+    {l:'QS',c:'#ff9800', s:'07:00', e:'15:30', p:'30'}, 
+    {l:'STL',c:'#ffc107', s:'07:00', e:'15:30', p:'30'}, 
+    {l:'FHR',c:'#00bcd4', s:'07:00', e:'15:30', p:'30'}, 
+    {l:'FD',c:'#ff80ab', s:'06:00', e:'14:30', p:'30'}, 
+    {l:'SD',c:'#b39ddb', s:'13:30', e:'22:00', p:'30'}, 
+    {l:'QC',c:'#009688', s:'07:00', e:'15:30', p:'30'}, 
+    {l:'TS',c:'#9e9e9e', s:'07:30', e:'16:00', p:'30'},
+    {l:'HRS',c:'#795548', s:'08:00', e:'16:30', p:'30'}
+  ]);
+
+  // Zustand für die Bearbeitung von Schichtzeiten im Modal
+  const [editingSchichtIdx, setEditingSchichtIdx] = useState(null);
+  const [editStartTime, setEditStartTime] = useState('');
+  const [editEndTime, setEditEndTime] = useState('');
+  const [editPauseTime, setEditPauseTime] = useState('');
+
+  // Zustände für das manuelle Editieren eines einzelnen Tages in "Mein Plan"
+  const [myPlanModalVisible, setMyPlanModalVisible] = useState(false);
+  const [myPlanSelectedDay, setMyPlanSelectedDay] = useState(null);
+  const [myPlanEditLabel, setMyPlanEditLabel] = useState('');
+  const [myPlanEditStart, setMyPlanEditStart] = useState('');
+  const [myPlanEditEnd, setMyPlanEditEnd] = useState('');
+  const [myPlanEditPause, setMyPlanEditPause] = useState('');
+
+  // Referenzen für TextInput Loops (Fokus-Schnittstellen)
+  const editEndRef = useRef(null);
+  const editPauseRef = useRef(null);
+  const myPlanEndRef = useRef(null);
+  const myPlanPauseRef = useRef(null);
+
+  // Generische Zeitformatierung für HHMM -> HH:MM mit automatischem Fokus-Wechsel
+  const formatTimeHHMM = (text, setTimeState, nextFocusRef) => {
+    const cleaned = text.replace(/[^0-9]/g, '');
+    
+    if (cleaned.length <= 4) {
+      if (cleaned.length === 4) {
+        const hh = cleaned.substring(0, 2);
+        const mm = cleaned.substring(2, 4);
+        setTimeState(`${hh}:${mm}`);
+        if (nextFocusRef && nextFocusRef.current) {
+          nextFocusRef.current.focus();
+        }
+      } else {
+        setTimeState(cleaned);
+      }
+    }
+  };
 
   const getHessenFeiertage = (jahr) => {
     const f = Math.floor, a = jahr % 19, b = f(jahr / 100), c = jahr % 100,
@@ -80,7 +139,6 @@ export default function App() {
           n = f((h + l - 7 * m + 90) / 25), p = (h + l - 7 * m + 114) % 31;
     const ostern = new Date(jahr, n - 1, p + 1);
     
-    // Klarnamen Mapping für Toast/Alert Anzeige
     const feiertage = { 
       [`01.01.${jahr}`]: { code: "NJ", name: "Neujahr" }, 
       [`01.05.${jahr}`]: { code: "TdA", name: "Tag der Arbeit" }, 
@@ -119,6 +177,7 @@ export default function App() {
 
   const headerScrollRef = useRef(null);
   const mainVerticalScrollRef = useRef(null);
+  const myPlanVerticalScrollRef = useRef(null);
   const rowHeights = useRef({});
 
   useEffect(() => { loadData(); }, []);
@@ -126,19 +185,28 @@ export default function App() {
   useEffect(() => { 
     saveData(); 
     if (rangeEndIdx === 0 && shifts.length > 0) setRangeEndIdx(shifts.length - 1);
-  }, [shifts, personNames, isDarkMode]);
+  }, [shifts, personNames, isDarkMode, schichtTypen, sollStunden, sollNachtStunden]);
 
+  // Effekt für das automatische Scrollen zum heutigen Tag bei Tab-Wechsel
   useEffect(() => {
     if (activeTab === 'Schichten' && shifts.length > 0) {
       const timer = setTimeout(() => {
-        jumpToCurrentMonth(); 
+        jumpToCurrentDay(); 
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [activeTab]);
+    if (activeTab === 'MeinPlan' && shifts.length > 0) {
+      const timer = setTimeout(() => {
+        jumpToCurrentDayMyPlan(); 
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab, selectedMonthFilter]);
 
   const saveData = async () => {
-    try { await AsyncStorage.setItem('@planer_nano_final_v5', JSON.stringify({shifts, personNames, isDarkMode})); } catch (e) {}
+    try { 
+      await AsyncStorage.setItem('@planer_nano_final_v5', JSON.stringify({shifts, personNames, isDarkMode, schichtTypen, sollStunden, sollNachtStunden})); 
+    } catch (e) {}
   };
 
   const loadData = async () => {
@@ -147,18 +215,35 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed?.shifts && parsed.shifts.length > 0) { 
-          setShifts(parsed.shifts); 
-          setRangeEndIdx(parsed.shifts.length - 1); 
+          const migratedShifts = parsed.shifts.map(s => ({
+            ...s,
+            customStart_p1: s.customStart_p1 !== undefined ? s.customStart_p1 : null,
+            customEnd_p1: s.customEnd_p1 !== undefined ? s.customEnd_p1 : null,
+            customPause_p1: s.customPause_p1 !== undefined ? s.customPause_p1 : null,
+            customLabel_p1: s.customLabel_p1 !== undefined ? s.customLabel_p1 : null,
+            customColor_p1: s.customColor_p1 !== undefined ? s.customColor_p1 : null,
+          }));
+          setShifts(migratedShifts); 
+          setRangeEndIdx(migratedShifts.length - 1); 
         }
         if (parsed?.personNames) setPersonNames(parsed.personNames);
         if (parsed?.isDarkMode !== undefined) setIsDarkMode(parsed.isDarkMode);
+        if (parsed?.schichtTypen) setSchichtTypen(parsed.schichtTypen);
+        if (parsed?.sollStunden !== undefined) setSollStunden(parsed.sollStunden);
+        if (parsed?.sollNachtStunden !== undefined) setSollNachtStunden(parsed.sollNachtStunden);
       }
     } catch (e) {}
   };
 
   const handleExport = async () => {
-    const data = JSON.stringify({ shifts, personNames });
-    try { await Share.share({ message: data, title: 'Planer Backup' }); } catch (e) {}
+    setTimeout(async () => {
+      try {
+        const data = JSON.stringify({ shifts, personNames, schichtTypen, sollStunden, sollNachtStunden });
+        await Share.share({ message: data, title: 'Planer Backup' });
+      } catch (e) {
+        Alert.alert("Fehler", "Export konnte nicht durchgeführt werden.");
+      }
+    }, 50);
   };
 
   const handleImport = () => {
@@ -168,6 +253,9 @@ export default function App() {
       if (parsed.shifts) {
         setShifts(parsed.shifts);
         if (parsed.personNames) setPersonNames(parsed.personNames);
+        if (parsed.schichtTypen) setSchichtTypen(parsed.schichtTypen);
+        if (parsed.sollStunden !== undefined) setSollStunden(parsed.sollStunden);
+        if (parsed.sollNachtStunden !== undefined) setSollNachtStunden(parsed.sollNachtStunden);
         setRangeStartIdx(0);
         setRangeEndIdx(parsed.shifts.length - 1);
         setBackupInput('');
@@ -176,17 +264,65 @@ export default function App() {
     } catch (e) { Alert.alert("Fehler", "Ungültiger Code."); }
   };
 
-  const jumpToCurrentMonth = () => {
-    let targetMMYYYY = selectedMonthFilter;
-    if (!targetMMYYYY) {
+  const jumpToCurrentDay = () => {
+    let targetIdx = -1;
+    if (selectedMonthFilter) {
+      targetIdx = currentMonthShifts.findIndex(s => s.datum.endsWith(selectedMonthFilter));
+    } else {
       const today = new Date();
-      targetMMYYYY = `${String(today.getMonth() + 1).padStart(2, '0')}.${today.getFullYear()}`;
+      const tag = String(today.getDate()).padStart(2, '0');
+      const monat = String(today.getMonth() + 1).padStart(2, '0');
+      const heuteStr2026 = `${tag}.${monat}.2026`;
+      targetIdx = currentMonthShifts.findIndex(s => s.datum === heuteStr2026);
+      
+      if (targetIdx === -1) {
+        const aktuellerMonat2026 = `${monat}.2026`;
+        targetIdx = currentMonthShifts.findIndex(s => s.datum.endsWith(aktuellerMonat2026));
+      }
     }
     
-    const targetIdx = shifts.findIndex(s => s.datum.endsWith(targetMMYYYY));
     if (targetIdx !== -1 && mainVerticalScrollRef.current) {
-      const estimatedY = targetIdx * 45;
+      let estimatedY = 0;
+      let lastMonth = null;
+
+      for (let i = 0; i < targetIdx; i++) {
+        const currentItemMonth = currentMonthShifts[i].datum.split('.')[1];
+        if (lastMonth === null || currentItemMonth !== lastMonth) {
+          estimatedY += 30; 
+          lastMonth = currentItemMonth;
+        }
+        estimatedY += 45; 
+      }
+
+      const targetItemMonth = currentMonthShifts[targetIdx].datum.split('.')[1];
+      if (lastMonth === null || targetItemMonth !== lastMonth) {
+        estimatedY += 30; 
+      }
+
       mainVerticalScrollRef.current.scrollTo({ y: estimatedY, animated: false });
+    }
+  };
+
+  const jumpToCurrentDayMyPlan = () => {
+    let targetIdx = -1;
+    if (selectedMonthFilter) {
+      targetIdx = currentMonthShifts.findIndex(s => s.datum.endsWith(selectedMonthFilter));
+    } else {
+      const today = new Date();
+      const tag = String(today.getDate()).padStart(2, '0');
+      const monat = String(today.getMonth() + 1).padStart(2, '0');
+      const heuteStr2026 = `${tag}.${monat}.2026`;
+      targetIdx = currentMonthShifts.findIndex(s => s.datum === heuteStr2026);
+      
+      if (targetIdx === -1) {
+        const aktuellerMonat2026 = `${monat}.2026`;
+        targetIdx = currentMonthShifts.findIndex(s => s.datum.endsWith(aktuellerMonat2026));
+      }
+    }
+    
+    if (targetIdx !== -1 && myPlanVerticalScrollRef.current) {
+      let estimatedY = targetIdx * 41.5; 
+      myPlanVerticalScrollRef.current.scrollTo({ y: estimatedY, animated: false });
     }
   };
 
@@ -276,14 +412,12 @@ export default function App() {
       [selectedCell.pk+'Col']: customColor
     } : r));
     
-    // Falls der Kopier-Modus aktiv war, aktualisieren wir den Kopiervorrat direkt mit dem manuellen Wert
     if (copyModeActive) {
       setCopiedValue({ label: labelUpper, color: customColor });
     }
     setModalVisible(false);
   };
 
-  // Hilfsfunktion zum Ausgeben des Namens bei Klick auf Feiertag
   const handleFeiertagClick = (datumStr) => {
     const name = getHessenFeiertagName(datumStr);
     if (name) {
@@ -291,18 +425,15 @@ export default function App() {
     }
   };
 
-  // Behandelt Klicks auf Zellen unter Berücksichtigung des Kopier-Modus
   const handleCellPress = (rowId, pk, currentLabel, currentColor) => {
     if (copyModeActive) {
       if (!copiedValue) {
-        // Erster Klick im Kopier-Modus: Wählt das Muster aus dieser Zelle
         if (currentLabel === '--') {
           Alert.alert("Hinweis", "Wähle eine besetzte Zelle aus, um deren Schicht als Muster zu kopieren.");
           return;
         }
         setCopiedValue({ label: currentLabel, color: currentColor });
       } else {
-        // Folgende Klicks: Überträgt das ausgewählte Muster auf die Zelle
         setShifts(shifts.map(r => r.id === rowId ? {
           ...r,
           [pk]: copiedValue.label,
@@ -310,17 +441,321 @@ export default function App() {
         } : r));
       }
     } else {
-      // Normaler Modus: Modal öffnen
       setSelectedCell({ rowId, pk });
       setCustomLabel('');
+      setEditingSchichtIdx(null); 
       setModalVisible(true);
     }
   };
 
-  const renderStatistik = () => {
-    const colWidth = 26; // Leicht reduziert, um Platz für 10 Spalten zu bieten
+  const startEditSchichtTimes = (idx, schicht) => {
+    setEditingSchichtIdx(idx);
+    setEditStartTime('');
+    setEditEndTime('');
+    setEditPauseTime('');
+  };
 
-    // Berechnung der Feiertage, die im ausgewählten Zeitraum auf Wochentage (Mo-Fr) fallen
+  const saveSchichtTimes = (idx) => {
+    const updated = [...schichtTypen];
+    updated[idx] = {
+      ...updated[idx],
+      s: editStartTime || updated[idx].s,
+      e: editEndTime || updated[idx].e,
+      p: editPauseTime || updated[idx].p
+    };
+    setSchichtTypen(updated);
+    setEditingSchichtIdx(null);
+  };
+
+  const openMyPlanEditModal = (day) => {
+    setMyPlanSelectedDay(day);
+    setMyPlanEditLabel(day.customLabel_p1 !== null ? day.customLabel_p1 : (day.p1 !== '--' ? day.p1 : ''));
+    setMyPlanEditStart('');
+    setMyPlanEditEnd('');
+    setMyPlanEditPause('');
+    setMyPlanModalVisible(true);
+  };
+
+  const saveMyPlanDayChanges = () => {
+    if (!myPlanSelectedDay) return;
+    setShifts(shifts.map(s => {
+      if (s.id === myPlanSelectedDay.id) {
+        const currentGlobal = schichtTypen.find(t => t.l === myPlanEditLabel.trim().toUpperCase());
+        return {
+          ...s,
+          customLabel_p1: myPlanEditLabel.trim() || null,
+          customStart_p1: myPlanEditStart.trim() || (currentGlobal ? currentGlobal.s : null),
+          customEnd_p1: myPlanEditEnd.trim() || (currentGlobal ? currentGlobal.e : null),
+          customPause_p1: myPlanEditPause.trim() || (currentGlobal ? currentGlobal.p : null),
+          customColor_p1: myPlanEditLabel.trim() ? (currentGlobal ? currentGlobal.c : s.customColor_p1 || '#e91e63') : null
+        };
+      }
+      return s;
+    }));
+    setMyPlanModalVisible(false);
+    setMyPlanSelectedDay(null);
+  };
+
+  const resetMyPlanDayChanges = () => {
+    if (!myPlanSelectedDay) return;
+    setShifts(shifts.map(s => {
+      if (s.id === myPlanSelectedDay.id) {
+        return {
+          ...s,
+          customLabel_p1: null,
+          customStart_p1: null,
+          customEnd_p1: null,
+          customPause_p1: null,
+          customColor_p1: null
+        };
+      }
+      return s;
+    }));
+    setMyPlanModalVisible(false);
+    setMyPlanSelectedDay(null);
+  };
+
+  const calculateMyPlanStats = useMemo(() => {
+    let totalMinutes = 0;
+    let totalNightMinutes = 0;
+    let totalFeiertagMinutes = 0;
+
+    currentMonthShifts.forEach(s => {
+      const label = s.customLabel_p1 !== null ? s.customLabel_p1 : s.p1;
+      if (label === '--' || !label) return;
+
+      const globalSchicht = schichtTypen.find(t => t.l === s.p1);
+      const startStr = s.customStart_p1 !== null ? s.customStart_p1 : (globalSchicht ? globalSchicht.s : '');
+      const endStr = s.customEnd_p1 !== null ? s.customEnd_p1 : (globalSchicht ? globalSchicht.e : '');
+      const pauseStr = s.customPause_p1 !== null ? s.customPause_p1 : (globalSchicht ? globalSchicht.p : '0');
+
+      if (!startStr || !endStr) return;
+
+      const [sH, sM] = startStr.split(':').map(Number);
+      const [eH, eM] = endStr.split(':').map(Number);
+      const pauseMin = parseInt(pauseStr) || 0;
+
+      if (isNaN(sH) || isNaN(sM) || isNaN(eH) || isNaN(eM)) return;
+
+      let startMin = sH * 60 + sM;
+      let endMin = eH * 60 + eM;
+
+      if (endMin < startMin) {
+        endMin += 24 * 60;
+      }
+
+      const grossMinutes = endMin - startMin;
+      const netMinutes = Math.max(0, grossMinutes - pauseMin);
+      totalMinutes += netMinutes;
+
+      const ft = isHessenFeiertag(s.datum);
+      if (ft && s.tag !== 'Sa' && s.tag !== 'So') {
+        totalFeiertagMinutes += netMinutes;
+      }
+
+      let nightStart1 = startMin;
+      let nightEnd1 = Math.min(endMin, 6 * 60);
+      let night1 = Math.max(0, nightEnd1 - nightStart1);
+
+      let nightStart2 = Math.max(startMin, 24 * 60);
+      let nightEnd2 = Math.min(endMin, 30 * 60); 
+      let night2 = Math.max(0, nightEnd2 - nightStart2);
+
+      let dayNightMinutes = night1 + night2;
+      totalNightMinutes += dayNightMinutes;
+    });
+
+    const currentActualHours = totalMinutes / 60;
+    const parsedSollHours = parseFloat(sollStunden.replace(',', '.')) || 0;
+    const diffHours = currentActualHours - parsedSollHours;
+
+    let statusIcon = 'checkmark-circle';
+    let statusColor = '#2ecc71'; 
+    if (parsedSollHours > 0) {
+      if (currentActualHours > parsedSollHours + 0.01) {
+        statusIcon = 'arrow-up-circle';
+        statusColor = '#2ecc71'; 
+      } else if (currentActualHours < parsedSollHours - 0.01) {
+        statusIcon = 'arrow-down-circle';
+        statusColor = '#e91e63'; 
+      }
+    }
+
+    const currentFeiertagHours = totalFeiertagMinutes / 60;
+
+    return {
+      hours: currentActualHours.toFixed(2),
+      nightHours: (totalNightMinutes / 60).toFixed(2),
+      feiertagHours: currentFeiertagHours.toFixed(2),
+      diffHours: diffHours.toFixed(2),
+      hasSoll: parsedSollHours > 0,
+      statusIcon,
+      statusColor
+    };
+  }, [currentMonthShifts, schichtTypen, sollStunden]);
+
+  const renderMeinPlan = () => {
+    return (
+      <View style={{ flex: 1 }}>
+        <View style={[styles.searchFilterContainer, { backgroundColor: theme.card, borderBottomColor: theme.bor }]}>
+          <TouchableOpacity style={styles.searchBarButton} onPress={() => setSearchModalVisible(true)}>
+            <Ionicons name="search-outline" size={16} color={theme.acc} style={{ marginRight: 8 }} />
+            <Text style={[styles.searchText, { color: theme.txt }]}>
+              Monat wechseln: <Text style={{ color: theme.acc, fontWeight: 'bold' }}>{filterDisplayTitle}</Text>
+            </Text>
+          </TouchableOpacity>
+          {selectedMonthFilter !== '' && (
+            <TouchableOpacity style={styles.clearFilterBtn} onPress={() => setSelectedMonthFilter('')}>
+              <Ionicons name="close-circle" size={18} color="#e91e63" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.modernStatsDashboardGrid}>
+          <View style={styles.modernDashboardRow}>
+            
+            <View style={[styles.modernStatTileVertical, { backgroundColor: theme.card, borderColor: theme.bor }]}>
+              <View style={styles.modernTileHeader}>
+                <View style={[styles.modernIconBadge, { backgroundColor: 'rgba(25, 118, 210, 0.1)' }]}>
+                  <Ionicons name="time" size={16} color={theme.acc} />
+                </View>
+                <Text style={styles.modernTileLabel} numberOfLines={1}>Arbeitszeit ({personNames.p1})</Text>
+              </View>
+              <View style={styles.modernMainRow}>
+                <Text style={[styles.modernValueHighlight, { color: theme.txt }]}>{calculateMyPlanStats.hours}</Text>
+                <Text style={[styles.modernUnit, { color: theme.sub }]}>Std. Ist</Text>
+              </View>
+              {calculateMyPlanStats.hasSoll ? (
+                <View style={[
+                  styles.modernBadgeDiff, 
+                  { backgroundColor: parseFloat(calculateMyPlanStats.diffHours) >= 0 ? 'rgba(46, 125, 50, 0.12)' : 'rgba(194, 24, 91, 0.12)' }
+                ]}>
+                  <Ionicons 
+                    name={parseFloat(calculateMyPlanStats.diffHours) >= 0 ? "add-circle" : "remove-circle"} 
+                    size={11} 
+                    color={parseFloat(calculateMyPlanStats.diffHours) >= 0 ? '#2e7d32' : '#c2185b'} 
+                    style={{ marginRight: 2 }}
+                  />
+                  <Text style={[styles.modernBadgeDiffText, { color: parseFloat(calculateMyPlanStats.diffHours) >= 0 ? '#2e7d32' : '#c2185b' }]}>
+                    {parseFloat(calculateMyPlanStats.diffHours) >= 0 ? '+' : ''}{calculateMyPlanStats.diffHours} Std.
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.modernBadgeSpacePlaceholder} />
+              )}
+            </View>
+            
+            <View style={[styles.modernStatTileVertical, { backgroundColor: theme.card, borderColor: theme.bor }]}>
+              <View style={styles.modernTileHeader}>
+                <View style={[styles.modernIconBadge, { backgroundColor: 'rgba(255, 152, 0, 0.1)' }]}>
+                  <Ionicons name="moon" size={15} color="#ff9800" />
+                </View>
+                <Text style={styles.modernTileLabel} numberOfLines={1}>Nachtzuschlag</Text>
+              </View>
+              <View style={styles.modernMainRow}>
+                <Text style={[styles.modernValueHighlight, { color: theme.txt }]}>{calculateMyPlanStats.nightHours}</Text>
+                <Text style={[styles.modernUnit, { color: theme.sub }]}>Std. ges.</Text>
+              </View>
+              <View style={styles.modernBadgeSpacePlaceholder} />
+            </View>
+
+            <View style={[styles.modernStatTileVertical, { backgroundColor: theme.card, borderColor: theme.bor }]}>
+              <View style={styles.modernTileHeader}>
+                <View style={[styles.modernIconBadge, { backgroundColor: 'rgba(233, 30, 99, 0.1)' }]}>
+                  <Ionicons name="ribbon" size={15} color="#e91e63" />
+                </View>
+                <Text style={styles.modernTileLabel} numberOfLines={1}>Feiertage (Mo-Fr)</Text>
+              </View>
+              <View style={styles.modernMainRow}>
+                <Text style={[styles.modernValueHighlight, { color: theme.txt }]}>{calculateMyPlanStats.feiertagHours}</Text>
+                <Text style={[styles.modernUnit, { color: theme.sub }]}>Std. Ist</Text>
+              </View>
+              <View style={styles.modernBadgeSpacePlaceholder} />
+            </View>
+
+            <View style={[styles.modernStatTileVertical, { backgroundColor: theme.card, borderColor: theme.bor }]}>
+              <View style={styles.modernTileHeader}>
+                <View style={[styles.modernIconBadge, { backgroundColor: 'rgba(156, 39, 176, 0.1)' }]}>
+                  <Ionicons name="flag" size={15} color="#9c27b0" />
+                </View>
+                <Text style={styles.modernTileLabel} numberOfLines={1}>Sollvorgabe</Text>
+              </View>
+              <View style={{ flex: 1, justifyContent: 'center', marginTop: 4 }}>
+                <View style={styles.modernSollRowElement}>
+                  <Text style={[styles.modernSollInlineLabel, { color: theme.sub }]}>Monat:</Text>
+                  <TextInput 
+                    style={[styles.modernSollInput, { color: theme.txt, backgroundColor: isDarkMode ? '#2c2c2c' : '#f5f5f5', width: 42 }]}
+                    keyboardType="numeric"
+                    placeholder="0.00"
+                    placeholderTextColor="#888"
+                    value={sollStunden}
+                    onChangeText={setSollStunden}
+                  />
+                </View>
+              </View>
+            </View>
+
+          </View>
+        </View>
+
+        <ScrollView ref={myPlanVerticalScrollRef} style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 150 }}>
+          <View style={[styles.matrixCard, { backgroundColor: theme.card, marginHorizontal: 10, marginTop: 5 }]}>
+            <View style={[styles.matrixHeader, { borderBottomColor: theme.bor, paddingBottom: 12 }]}>
+              <Text style={[styles.myPlanRowHeaderTxt, { color: theme.sub, width: '22%' }]}>DATUM</Text>
+              <Text style={[styles.myPlanRowHeaderTxt, { color: theme.sub, width: '20%', textAlign: 'center' }]}>SCHICHT</Text>
+              <Text style={[styles.myPlanRowHeaderTxt, { color: theme.sub, width: '40%', textAlign: 'center' }]}>ZEITRAUM (PAUSE)</Text>
+              <Text style={[styles.myPlanRowHeaderTxt, { color: theme.sub, width: '18%', textAlign: 'right' }]}>EDIT</Text>
+            </View>
+
+            {currentMonthShifts.map((s) => {
+              const globalSchicht = schichtTypen.find(t => t.l === s.p1);
+              const isEdited = s.customLabel_p1 !== null || s.customStart_p1 !== null || s.customEnd_p1 !== null || s.customPause_p1 !== null;
+              
+              const label = s.customLabel_p1 !== null ? s.customLabel_p1 : s.p1;
+              const start = s.customStart_p1 !== null ? s.customStart_p1 : (globalSchicht ? globalSchicht.s : '--:--');
+              const end = s.customEnd_p1 !== null ? s.customEnd_p1 : (globalSchicht ? globalSchicht.e : '--:--');
+              const pause = s.customPause_p1 !== null ? s.customPause_p1 : (globalSchicht ? globalSchicht.p : '0');
+              
+              const color = s.customColor_p1 !== null ? s.customColor_p1 : (s.p1Col !== 'transparent' ? s.p1Col : (globalSchicht ? globalSchicht.c : 'transparent'));
+              const ft = isHessenFeiertag(s.datum);
+
+              return (
+                <View key={s.id} style={[styles.myPlanRow, { borderBottomColor: theme.bor, backgroundColor: ft ? (isDarkMode ? '#3d1010' : '#ffebee') : 'transparent' }]}>
+                  <View style={{ width: '22%', justifyContent: 'center' }}>
+                    <Text style={[styles.tagTxt, { color: (s.tag === 'Sa' || s.tag === 'So' || ft) ? '#e91e63' : theme.txt, fontSize: 11 }]}>{s.tag}, {s.datum.split('.')[0]}.{s.datum.split('.')[1]}</Text>
+                  </View>
+
+                  <View style={{ width: '20%', alignItems: 'center', justifyContent: 'center' }}>
+                    <View style={[styles.miniBox, { backgroundColor: color === 'transparent' ? (isDarkMode ? '#333' : '#e0e0e0') : color, paddingHorizontal: 6, minWidth: 42, height: 22, borderRadius: 6 }]}>
+                      <Text style={[styles.miniBoxTxt, { color: color === 'transparent' ? theme.txt : 'white', fontSize: 10 }]}>{label}</Text>
+                    </View>
+                  </View>
+
+                  <View style={{ width: '40%', justifyContent: 'center', alignItems: 'center' }}>
+                    {label !== '--' ? (
+                      <Text style={{ color: theme.txt, fontSize: 11, fontWeight: '500' }}>
+                        {start} - {end} <Text style={{ color: theme.sub, fontSize: 9 }}>({pause}m)</Text>
+                      </Text>
+                    ) : (
+                      <Text style={{ color: theme.sub, fontSize: 11 }}>Frei</Text>
+                    )}
+                  </View>
+
+                  <TouchableOpacity style={{ width: '18%', alignItems: 'flex-end', justifyContent: 'center', paddingVertical: 4 }} onPress={() => openMyPlanEditModal(s)}>
+                    <Ionicons name={isEdited ? "create" : "create-outline"} size={18} color={isEdited ? '#2ecc71' : theme.acc} />
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        </ScrollView>
+      </View>
+    );
+  };
+
+  const renderStatistik = () => {
+    const colWidth = 26;
+
     const wochentagFeiertage = filteredShifts.filter(s => {
       return s.tag !== 'Sa' && s.tag !== 'So' && isHessenFeiertag(s.datum) !== null;
     });
@@ -342,7 +777,6 @@ export default function App() {
 
         <ScrollView style={{flex: 1}} removeClippedSubviews={true} contentContainerStyle={{padding: 10, paddingBottom: 150}}>
           
-          {/* NEU: Feiertagsstatistik */}
           <View style={styles.statHeader}><Ionicons name="calendar-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Feiertagsstatistik (Mo–Fr) (%)</Text></View>
           <View style={[styles.matrixCard, {backgroundColor: theme.card}]}>
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
@@ -353,9 +787,7 @@ export default function App() {
               </View>
             </View>
             {personKeys.map(pk => {
-              // Zähle wie oft die Person an den ermittelten Wochentag-Feiertagen gearbeitet hat (nicht frei '--')
               const eingeteilteFeiertage = wochentagFeiertage.filter(s => s[pk] !== '--').length;
-              // Formel: 100 / Mögliche Feiertage * eingeteilte Feiertage
               const prozent = moeglicheFeiertageAnzahl > 0 ? Math.round((100 / moeglicheFeiertageAnzahl) * eingeteilteFeiertage) : 0;
               
               return (
@@ -363,7 +795,7 @@ export default function App() {
                   <Text style={[styles.matrixName, {color: theme.txt, width: 80}]} numberOfLines={1}>{personNames[pk]}</Text>
                   <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around'}}>
                     <Text style={{width: 60, textAlign: 'center', fontSize: 11, color: theme.txt}}>{eingeteilteFeiertage} / {moeglicheFeiertageAnzahl}</Text>
-                    <Text style={{width: 60, textAlign: 'center', fontSize: 11, fontWeight: 'bold', color: eingeteilteFeiertage > 0 ? theme.txt : '#ccc'}}>{moeglicheFeiertageAnzahl > 0 && eingeteilteFeiertage > 0 ? `${prozent}%` : moeglicheFeiertageAnzahl > 0 && eingeteilteFeiertage === 0 ? '0%' : '·'}</Text>
+                    <Text style={{width: 60, textAlign: 'center', fontSize: 11, fontWeight: 'bold', color: eingeteilteFeiertage > 0 ? theme.txt : '#ccc'}}>{moeglicheFeiertageAnzahl > 0 && eingeteilteFeiertage > 0 ? `${prozent}%` : moeglicheFeiertageAnzahl > 0 && eingeteilteFeiertage === 0 ? '0%' : '0%'}</Text>
                   </View>
                 </View>
               );
@@ -375,7 +807,7 @@ export default function App() {
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
               <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 55}]}>NAME</Text>
               <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-between'}}>
-                {schichtTypen.map((t, i) => (<View key={i} style={{width: colWidth, alignItems: 'center'}}><View style={[styles.miniBox, {backgroundColor: t.c, width: 23}]}><Text style={styles.miniBoxTxt}>{t.l}</Text></View></View>))}
+                {schichtTypen.map((t, i) => (<View key={i} style={{width: colWidth, justifyContent: 'center'}}><View style={[styles.miniBox, {backgroundColor: t.c, width: 23}]}><Text style={styles.miniBoxTxt}>{t.l}</Text></View></View>))}
               </View>
             </View>
             {personKeys.map(pk => {
@@ -449,23 +881,59 @@ export default function App() {
               ))}
           </View>
 
+          <View style={[styles.statHeader, {marginTop: 20}]}><Ionicons name="arrow-forward-circle-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Folge-Duo: SV nach PDI (%)</Text></View>
+          <View style={[styles.matrixCard, {backgroundColor: theme.card, paddingHorizontal: 5}]}>
+              <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
+                  <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 45}]}>SV von</Text>
+                  <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around'}}>
+                      {personKeys.map(pk => (<Text key={pk} style={{fontSize: 7, fontWeight: 'bold', color: theme.sub, width: 22, textAlign: 'center'}}>{personNames[pk].substring(0,2).toUpperCase()}</Text>))}
+                  </View>
+              </View>
+              {personKeys.map(pSv => {
+                  return (
+                      <View key={pSv} style={[styles.matrixRow, {borderBottomColor: theme.bor}]}>
+                          <Text style={[styles.matrixName, {color: theme.txt, width: 45, fontSize: 9}]} numberOfLines={1}>{personNames[pSv]}</Text>
+                          <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around'}}>
+                              {personKeys.map(pPdi => {
+                                  let pdiOnPrevDayCount = 0;
+                                  let totalSvOnCurrentDays = 0;
+
+                                  filteredShifts.forEach((s, idx) => {
+                                      const absoluteIdx = rangeStartIdx + idx;
+                                      if (s[pSv] === 'SV' && absoluteIdx > 0) {
+                                          totalSvOnCurrentDays++;
+                                          if (shifts[absoluteIdx - 1][pPdi] === 'PDI') {
+                                              pdiOnPrevDayCount++;
+                                          }
+                                      }
+                                  });
+
+                                  const perc = totalSvOnCurrentDays > 0 ? Math.round((pdiOnPrevDayCount / totalSvOnCurrentDays) * 100) : 0;
+                                  return (<Text key={pPdi} style={{width: 22, textAlign: 'center', fontSize: 8, fontWeight: 'bold', color: perc > 0 ? theme.txt : '#ddd'}}>{perc > 0 ? `${perc}%` : '·'}</Text>);
+                              })}
+                          </View>
+                      </View>
+                  );
+              })}
+          </View>
+
           <View style={[styles.statHeader, {marginTop: 20}]}><Ionicons name="calendar-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>SV am Wochenende (%)</Text></View>
           <View style={[styles.matrixCard, {backgroundColor: theme.card}]}>
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
               <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 80}]}>NAME</Text>
-              <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around'}}><Text style={[styles.miniBoxTxt, {color: '#e91e63', fontWeight: 'bold'}]}>SAMSTAG</Text><Text style={[styles.miniBoxTxt, {color: '#e91e63', fontWeight: 'bold'}]}>SONNTAG</Text></View>
+              <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around shadow'}}><Text style={[styles.miniBoxTxt, {color: '#e91e63', fontWeight: 'bold'}]}>SAMSTAG</Text><Text style={[styles.miniBoxTxt, {color: '#e91e63', fontWeight: 'bold'}]}>SONNTAG</Text></View>
             </View>
             {personKeys.map(pk => {
               const saS = filteredShifts.filter(s => s.tag === 'Sa' && s[pk] !== '--');
               const soS = filteredShifts.filter(s => s.tag === 'So' && s[pk] !== '--');
-              const saP = saS.length > 0 ? Math.round((saS.filter(s => s[pk] === 'SV').length / saS.length) * 100) : null;
-              const soP = soS.length > 0 ? Math.round((soS.filter(s => s[pk] === 'SV').length / soS.length) * 100) : null;
+              const saP = saS.length > 0 ? Math.round((saS.filter(s => s[pk] === 'SV').length / saS.length) * 100) : 0;
+              const soP = soS.length > 0 ? Math.round((soS.filter(s => s[pk] === 'SV').length / soS.length) * 100) : 0;
               return (
                 <View key={pk} style={[styles.matrixRow, {borderBottomColor: theme.bor}]}>
                   <Text style={[styles.matrixName, {color: theme.txt, width: 80}]}>{personNames[pk]}</Text>
                   <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around'}}>
-                      <Text style={{width: 60, textAlign: 'center', fontSize: 10, color: saP !== null ? theme.txt : '#ddd'}}>{saP !== null ? saP + '%' : '·'}</Text>
-                      <Text style={{width: 60, textAlign: 'center', fontSize: 10, color: soP !== null ? theme.txt : '#ddd'}}>{soP !== null ? soP + '%' : '·'}</Text>
+                      <Text style={{width: 60, textAlign: 'center', fontSize: 10, color: saS.length > 0 ? theme.txt : '#ddd'}}>{saP}%</Text>
+                      <Text style={{width: 60, textAlign: 'center', fontSize: 10, color: soS.length > 0 ? theme.txt : '#ddd'}}>{soP}%</Text>
                   </View>
                 </View>
               );
@@ -531,7 +999,6 @@ export default function App() {
               </TouchableOpacity>
             )}
             
-            {/* NEU: Button für Schicht-Muster kopieren */}
             <TouchableOpacity 
               style={[
                 styles.copyModeBtn, 
@@ -549,7 +1016,6 @@ export default function App() {
             </TouchableOpacity>
           </View>
 
-          {/* NEU: Status-Infoleiste falls Kopier-Modus aktiv ist */}
           {copyModeActive && (
             <View style={[styles.copyInfoBar, { backgroundColor: copiedValue ? copiedValue.color : '#555' }]}>
               <Text style={styles.copyInfoBarTxt}>
@@ -591,7 +1057,6 @@ export default function App() {
                           </Text>
                         </View>
                       )}
-                      {/* Modifiziert: TouchableOpacity um den Datumsbereich links, um bei Feiertagen den Namen zu zeigen */}
                       <TouchableOpacity 
                         disabled={!ft}
                         onPress={() => handleFeiertagClick(s.datum)}
@@ -640,9 +1105,10 @@ export default function App() {
             </View>
           </ScrollView>
         </View>
-      ) : renderStatistik()}
+      ) : activeTab === 'Statistik' ? renderStatistik() : renderMeinPlan()}
 
       <View style={[styles.tabBar, {backgroundColor: theme.card, borderTopColor: theme.bor}]}>
+        <TouchableOpacity style={styles.tab} onPress={() => setActiveTab('MeinPlan')}><Ionicons name="calendar" size={22} color={activeTab === 'MeinPlan' ? theme.acc : '#888'} /><Text style={{fontSize: 10, color: activeTab === 'MeinPlan' ? theme.acc : '#888', marginTop: 4}}>Mein Plan</Text></TouchableOpacity>
         <TouchableOpacity style={styles.tab} onPress={() => setActiveTab('Schichten')}><Ionicons name="grid" size={22} color={activeTab === 'Schichten' ? theme.acc : '#888'} /><Text style={{fontSize: 10, color: activeTab === 'Schichten' ? theme.acc : '#888', marginTop: 4}}>Schichten</Text></TouchableOpacity>
         <TouchableOpacity style={styles.tab} onPress={() => setActiveTab('Statistik')}><Ionicons name="stats-chart" size={22} color={activeTab === 'Statistik' ? theme.acc : '#888'} /><Text style={{fontSize: 10, color: activeTab === 'Statistik' ? theme.acc : '#888', marginTop: 4}}>Statistik</Text></TouchableOpacity>
       </View>
@@ -694,7 +1160,7 @@ export default function App() {
                 maxLength={8}
                 autoFocus={true} 
               />
-              <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+              <View style={styles.modalButtonRowHorizontal}>
                 <TouchableOpacity style={[styles.saveBtn, {backgroundColor: '#9e9e9e', flex: 0.48}]} onPress={() => setRangeModalVisible(false)}>
                   <Text style={{color: 'white', fontWeight: 'bold'}}>Abbrechen</Text>
                 </TouchableOpacity>
@@ -708,64 +1174,134 @@ export default function App() {
 
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalBack}>
-          <View style={[styles.modalBox, {backgroundColor: theme.card, width: '95%', padding: 15}]}>
-            
-            <Text style={{color: theme.sub, fontSize: 11, fontWeight: 'bold', marginBottom: 6}}>MANUELLE SCHICHT ERSTELLEN</Text>
-            <View style={[styles.customShiftContainer, {borderColor: theme.bor}]}>
-              <TextInput
-                style={[styles.customInput, {color: theme.txt, backgroundColor: isDarkMode ? '#2c2c2c' : '#f5f5f5'}]}
-                placeholder="Kürzel (z.B. NACHT)"
-                placeholderTextColor="#888"
-                maxLength={6}
-                value={customLabel}
-                onChangeText={setCustomLabel}
-              />
-              <TouchableOpacity style={[styles.customAddBtn, {backgroundColor: customColor}]} onPress={applyCustomShift}>
-                <Text style={{color: 'white', fontWeight: 'bold', fontSize: 12}}>Einfügen</Text>
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.paletteRow}>
-              {customColorPalette.map((color) => (
-                <TouchableOpacity 
-                  key={color} 
-                  style={[styles.paletteCircle, {backgroundColor: color, borderWidth: customColor === color ? 3 : 0, borderColor: theme.txt}]} 
-                  onPress={() => setCustomColor(color)}
+          <View style={[styles.modalBox, {backgroundColor: theme.card, width: '95%', padding: 15, maxHeight: '85%'}]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={{color: theme.sub, fontSize: 11, fontWeight: 'bold', marginBottom: 6}}>MANUELLE SCHICHT ERSTELLEN</Text>
+              <View style={[styles.customShiftContainer, {borderColor: theme.bor}]}>
+                <TextInput
+                  style={[styles.customInput, {color: theme.txt, backgroundColor: isDarkMode ? '#2c2c2c' : '#f5f5f5'}]}
+                  placeholder="Kürzel (z.B. NACHT)"
+                  placeholderTextColor="#888"
+                  maxLength={6}
+                  value={customLabel}
+                  onChangeText={setCustomLabel}
                 />
-              ))}
-            </View>
-
-            <View style={[styles.divider, {backgroundColor: theme.bor}]} />
-
-            <Text style={{color: theme.sub, fontSize: 11, fontWeight: 'bold', marginBottom: 8}}>VORGEFERTIGTE SCHICHTEN</Text>
-            <View style={styles.modalGrid}>
-                {schichtTypen.map((s, i) => (
-                  <TouchableOpacity 
-                    key={i} 
-                    style={[styles.opt, {backgroundColor: s.c, borderRadius: 12}]} 
-                    onPress={() => { 
-                      setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: s.l, [selectedCell.pk+'Col']: s.c} : r)); 
-                      if (copyModeActive) { setCopiedValue({ label: s.l, color: s.c }); }
-                      setModalVisible(false); 
-                    }}
-                  >
-                    <Text style={{color: 'white', fontWeight: 'bold', fontSize: 11}}>{s.l}</Text>
-                  </TouchableOpacity>
-                ))}
-                <TouchableOpacity 
-                  style={[styles.opt, {backgroundColor: isDarkMode ? '#2c2c2c' : '#f0f0f0', borderRadius: 12, borderWidth: 1, borderColor: isDarkMode ? '#444' : '#ddd'}]} 
-                  onPress={() => { 
-                    setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: '--', [selectedCell.pk+'Col']: 'transparent'} : r)); 
-                    if (copyModeActive) { setCopiedValue({ label: '--', color: 'transparent' }); }
-                    setModalVisible(false); 
-                  }}
-                >
-                  <Ionicons name="remove-circle-outline" size={16} color={isDarkMode ? '#aaa' : '#888'} />
-                  <Text style={{color: isDarkMode ? '#aaa' : '#888', fontSize: 9, fontWeight: 'bold'}}>FREI</Text>
+                <TouchableOpacity style={[styles.customAddBtn, {backgroundColor: customColor}]} onPress={applyCustomShift}>
+                  <Text style={{color: 'white', fontWeight: 'bold', fontSize: 12}}>Einfügen</Text>
                 </TouchableOpacity>
-            </View>
+              </View>
+              
+              <View style={styles.paletteRow}>
+                {customColorPalette.map((color) => (
+                  <TouchableOpacity 
+                    key={color} 
+                    style={[styles.paletteCircle, {backgroundColor: color, borderWidth: customColor === color ? 3 : 0, borderColor: theme.txt}]} 
+                    onPress={() => setCustomColor(color)}
+                  />
+                ))}
+              </View>
 
-            <TouchableOpacity onPress={() => setModalVisible(false)} style={{marginTop: 15}}><Text style={{color: theme.acc, textAlign: 'center', fontWeight: 'bold'}}>Schließen</Text></TouchableOpacity>
+              <View style={[styles.divider, {backgroundColor: theme.bor}]} />
+
+              <Text style={{color: theme.sub, fontSize: 11, fontWeight: 'bold', marginBottom: 8}}>VORGEFERTIGTE SCHICHTEN (Zelle antippen / Uhr bearbeiten)</Text>
+              <View style={styles.modalGrid}>
+                  {schichtTypen.map((s, i) => (
+                    <View key={i} style={styles.optContainer}>
+                      <TouchableOpacity 
+                        style={[styles.opt, {backgroundColor: s.c, borderRadius: 12, width: '100%', margin: 0}]} 
+                        onPress={() => { 
+                          setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: s.l, [selectedCell.pk+'Col']: s.c} : r)); 
+                          if (copyModeActive) { setCopiedValue({ label: s.l, color: s.c }); }
+                          setModalVisible(false); 
+                        }}
+                      >
+                        <Text style={{color: 'white', fontWeight: 'bold', fontSize: 11}}>{s.l}</Text>
+                        <Text style={{color: 'rgba(255,255,255,0.8)', fontSize: 7, marginTop: 2}} numberOfLines={1}>
+                          {s.s || '--'}-{s.e || '--'}
+                        </Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        style={styles.timeEditIconBtn} 
+                        onPress={() => startEditSchichtTimes(i, s)}
+                      >
+                        <Ionicons name="time-outline" size={14} color={theme.acc} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  
+                  <View style={styles.optContainer}>
+                    <TouchableOpacity 
+                      style={[styles.opt, {backgroundColor: isDarkMode ? '#2c2c2c' : '#f0f0f0', borderRadius: 12, borderWidth: 1, borderColor: isDarkMode ? '#444' : '#ddd', width: '100%', margin: 0}]} 
+                      onPress={() => { 
+                        setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: '--', [selectedCell.pk+'Col']: 'transparent'} : r)); 
+                        if (copyModeActive) { setCopiedValue({ label: '--', color: 'transparent' }); }
+                        setModalVisible(false); 
+                      }}
+                    >
+                      <Ionicons name="remove-circle-outline" size={14} color={isDarkMode ? '#aaa' : '#888'} />
+                      <Text style={{color: isDarkMode ? '#aaa' : '#888', fontSize: 9, fontWeight: 'bold'}}>FREI</Text>
+                    </TouchableOpacity>
+                  </View>
+              </View>
+
+              {editingSchichtIdx !== null && (
+                <View style={[styles.timeEditBox, {backgroundColor: isDarkMode ? '#222' : '#f9f9f9', borderColor: theme.bor}]}>
+                  <Text style={{color: theme.txt, fontWeight: 'bold', fontSize: 12, marginBottom: 12}}>
+                    Zeiten für [{schichtTypen[editingSchichtIdx].l}] anpassen:
+                  </Text>
+                  <View style={styles.timeInputRow}>
+                    <View style={styles.timeInputWrapper}>
+                      <Text style={styles.timeInputSubLabel}>Start</Text>
+                      <TextInput 
+                        style={[styles.timeTextInput, {color: theme.txt, borderColor: theme.bor}]} 
+                        value={editStartTime} 
+                        onChangeText={(t) => formatTimeHHMM(t, setEditStartTime, editEndRef)} 
+                        placeholder="06:00" 
+                        placeholderTextColor="#777"
+                        keyboardType="numeric"
+                        maxLength={5}
+                      />
+                    </View>
+                    <View style={styles.timeInputWrapper}>
+                      <Text style={styles.timeInputSubLabel}>Ende</Text>
+                      <TextInput 
+                        ref={editEndRef}
+                        style={[styles.timeTextInput, {color: theme.txt, borderColor: theme.bor}]} 
+                        value={editEndTime} 
+                        onChangeText={(t) => formatTimeHHMM(t, setEditEndTime, editPauseRef)} 
+                        placeholder="14:30" 
+                        placeholderTextColor="#777"
+                        keyboardType="numeric"
+                        maxLength={5}
+                      />
+                    </View>
+                    <View style={styles.timeInputWrapper}>
+                      <Text style={styles.timeInputSubLabel}>Pause (Min)</Text>
+                      <TextInput 
+                        ref={editPauseRef}
+                        style={[styles.timeTextInput, {color: theme.txt, borderColor: theme.bor}]} 
+                        value={editPauseTime} 
+                        onChangeText={setEditPauseTime} 
+                        placeholder="30" 
+                        placeholderTextColor="#777"
+                        keyboardType="numeric"
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.timeActionRow}>
+                    <TouchableOpacity style={[styles.timeBtnSmall, {backgroundColor: '#9e9e9e', marginRight: 10}]} onPress={() => setEditingSchichtIdx(null)}>
+                      <Text style={{color: 'white', fontSize: 12, fontWeight: 'bold'}}>Abbrechen</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.timeBtnSmall, {backgroundColor: theme.acc}]} onPress={() => saveSchichtTimes(editingSchichtIdx)}>
+                      <Text style={{color: 'white', fontSize: 12, fontWeight: 'bold'}}>Speichern</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              <TouchableOpacity onPress={() => setModalVisible(false)} style={{marginTop: 20, marginBottom: 10}}><Text style={{color: theme.acc, textAlign: 'center', fontWeight: 'bold'}}>Schließen</Text></TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -775,6 +1311,76 @@ export default function App() {
           <TextInput style={[styles.input, {color: theme.txt, borderBottomColor: theme.acc}]} value={tempName} onChangeText={setTempName} autoFocus={true} />
           <TouchableOpacity style={[styles.saveBtn, {backgroundColor: theme.acc}]} onPress={() => { setPersonNames({...personNames, [selectedPersonKey]: tempName}); setNameModalVisible(false); }}><Text style={{color: 'white', fontWeight: 'bold'}}>Speichern</Text></TouchableOpacity>
         </View></View>
+      </Modal>
+
+      <Modal visible={myPlanModalVisible} transparent animationType="fade">
+        <View style={styles.modalBack}>
+          <View style={[styles.modalBox, { backgroundColor: theme.card, width: '90%' }]}>
+            <Text style={{ color: theme.txt, fontWeight: 'bold', fontSize: 14, marginBottom: 5, textAlign: 'center' }}>Tag manuell anpassen</Text>
+            <Text style={{ color: theme.sub, fontSize: 11, marginBottom: 15, textAlign: 'center' }}>{myPlanSelectedDay?.tag}, {myPlanSelectedDay?.datum}</Text>
+            
+            <Text style={styles.timeInputSubLabel}>Schicht-Kürzel</Text>
+            <TextInput 
+              style={[styles.input, { color: theme.txt, borderBottomColor: theme.acc, fontSize: 16, marginBottom: 10, paddingVertical: 4 }]} 
+              value={myPlanEditLabel} 
+              onChangeText={setMyPlanEditLabel} 
+              placeholder="z.B. SV oder FREI" 
+              placeholderTextColor="#666"
+            />
+
+            <View style={[styles.timeInputRow, { marginTop: 5 }]}>
+              <View style={styles.timeInputWrapper}>
+                <Text style={styles.timeInputSubLabel}>Startzeit</Text>
+                <TextInput 
+                  style={[styles.timeTextInput, { color: theme.txt, borderColor: theme.bor }]} 
+                  value={myPlanEditStart} 
+                  onChangeText={(t) => formatTimeHHMM(t, setMyPlanEditStart, myPlanEndRef)} 
+                  placeholder="06:00" 
+                  placeholderTextColor="#666"
+                  keyboardType="numeric"
+                  maxLength={5}
+                />
+              </View>
+              <View style={styles.timeInputWrapper}>
+                <Text style={styles.timeInputSubLabel}>Endzeit</Text>
+                <TextInput 
+                  ref={myPlanEndRef}
+                  style={[styles.timeTextInput, { color: theme.txt, borderColor: theme.bor }]} 
+                  value={myPlanEditEnd} 
+                  onChangeText={(t) => formatTimeHHMM(t, setMyPlanEditEnd, myPlanPauseRef)} 
+                  placeholder="14:00" 
+                  placeholderTextColor="#666"
+                  keyboardType="numeric"
+                  maxLength={5}
+                />
+              </View>
+              <View style={styles.timeInputWrapper}>
+                <Text style={styles.timeInputSubLabel}>Pause (Min)</Text>
+                <TextInput 
+                  ref={myPlanPauseRef}
+                  style={[styles.timeTextInput, { color: theme.txt, borderColor: theme.bor }]} 
+                  value={myPlanEditPause} 
+                  onChangeText={setMyPlanEditPause} 
+                  placeholder="30" 
+                  keyboardType="numeric" 
+                  placeholderTextColor="#666" 
+                />
+              </View>
+            </View>
+
+            <View style={styles.modalButtonRowHorizontal}>
+              <TouchableOpacity style={[styles.saveBtn, { backgroundColor: '#e91e63', flex: 0.3, justifyContent: 'center', alignItems: 'center' }]} onPress={resetMyPlanDayChanges}>
+                <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 11, textAlign: 'center' }}>Löschen</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.saveBtn, { backgroundColor: '#9e9e9e', flex: 0.3, justifyContent: 'center', alignItems: 'center' }]} onPress={() => setMyPlanModalVisible(false)}>
+                <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 11, textAlign: 'center' }}>Abbrechen</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.saveBtn, { backgroundColor: theme.acc, flex: 0.35, justifyContent: 'center', alignItems: 'center' }]} onPress={saveMyPlanDayChanges}>
+                <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 11, textAlign: 'center' }}>Speichern</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -812,9 +1418,21 @@ const styles = StyleSheet.create({
   modalBack: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
   modalBox: { width: '85%', padding: 25, borderRadius: 24 },
   modalGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start' },
-  opt: { width: '22%', aspectRatio: 1, margin: '1.5%', justifyContent: 'center', alignItems: 'center', borderRadius: 10 },
+  optContainer: { width: '22%', aspectRatio: 1, margin: '1.5%', position: 'relative' },
+  opt: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  timeEditIconBtn: { position: 'absolute', right: 2, top: 2, backgroundColor: 'rgba(255,255,255,0.8)', borderRadius: 8, width: 16, height: 16, justifyContent: 'center', alignItems: 'center', elevation: 2 },
+  
+  timeEditBox: { marginTop: 15, borderWidth: 1, borderRadius: 12, padding: 12 },
+  timeInputRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  timeInputWrapper: { flex: 1, marginHorizontal: 3 },
+  timeInputSubLabel: { fontSize: 10, color: '#888', marginBottom: 4, fontWeight: 'bold', textAlign: 'center' },
+  timeTextInput: { borderWidth: 1, borderRadius: 6, height: 36, paddingHorizontal: 4, fontSize: 12, textAlign: 'center' },
+  timeActionRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 14 },
+  timeBtnSmall: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 6 },
+  
   input: { borderBottomWidth: 2, fontSize: 22, textAlign: 'center', marginBottom: 15 },
-  saveBtn: { padding: 16, borderRadius: 14, alignItems: 'center' },
+  saveBtn: { paddingVertical: 12, paddingHorizontal: 10, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  modalButtonRowHorizontal: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', flexWrap: 'nowrap' },
   backupInput: { height: 80, borderWidth: 1, borderRadius: 12, padding: 10, fontSize: 10, textAlignVertical: 'top' },
   backupBtn: { padding: 12, borderRadius: 10, flex: 0.48, alignItems: 'center' },
   btnTxt: { color: 'white', fontWeight: 'bold', fontSize: 11 },
@@ -837,9 +1455,110 @@ const styles = StyleSheet.create({
   devValue: { fontSize: 14, fontWeight: 'bold' },
   devDivider: { height: 0.5, width: '100%', marginVertical: 10 },
 
-  // NEU: Styles für Schicht-Kopier-Modus
   copyModeBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8, marginLeft: 8 },
   copyModeBtnTxt: { fontSize: 11, fontWeight: 'bold' },
   copyInfoBar: { paddingVertical: 6, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
-  copyInfoBarTxt: { color: 'white', fontSize: 11, fontWeight: '600', textAlign: 'center' }
+  copyInfoBarTxt: { color: 'white', fontSize: 11, fontWeight: '600', textAlign: 'center' },
+
+  myPlanRow: { flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 0.5, alignItems: 'center' },
+  myPlanRowHeaderTxt: { fontSize: 9, fontWeight: 'bold' },
+
+  modernStatsDashboardGrid: { 
+    paddingHorizontal: 10, 
+    paddingTop: 10, 
+    paddingBottom: 8,
+  },
+  modernDashboardRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'stretch'
+  },
+  modernStatTileVertical: { 
+    flex: 1,
+    minHeight: 115,
+    borderRadius: 12, 
+    padding: 6, 
+    borderWidth: 1, 
+    elevation: 2, 
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    marginHorizontal: 3,
+    justifyContent: 'space-between'
+  },
+  modernTileHeader: { 
+    flexDirection: 'column', 
+    alignItems: 'center', 
+    marginBottom: 4 
+  },
+  modernIconBadge: { 
+    width: 22, 
+    height: 22, 
+    borderRadius: 6, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginBottom: 3 
+  },
+  modernTileLabel: { 
+    fontSize: 8.5, 
+    fontWeight: '700', 
+    color: '#888', 
+    textAlign: 'center',
+    letterSpacing: 0.1
+  },
+  modernMainRow: { 
+    flexDirection: 'row', 
+    alignItems: 'baseline', 
+    justifyContent: 'center',
+    marginVertical: 2 
+  },
+  modernValueHighlight: { 
+    fontSize: 15, 
+    fontWeight: '800', 
+    letterSpacing: -0.5 
+  },
+  modernUnit: { 
+    fontSize: 8, 
+    fontWeight: '600', 
+    marginLeft: 2 
+  },
+  modernSollRowElement: { 
+    flexDirection: 'row', 
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%'
+  },
+  modernSollInlineLabel: {
+    fontSize: 8,
+    fontWeight: '600'
+  },
+  modernSollInput: { 
+    width: 34, 
+    fontSize: 9, 
+    fontWeight: '700', 
+    paddingHorizontal: 2, 
+    borderRadius: 4, 
+    textAlign: 'center', 
+    height: 18,
+    paddingVertical: 0
+  },
+  modernBadgeDiff: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    alignSelf: 'stretch',
+    paddingVertical: 1.5, 
+    paddingHorizontal: 2, 
+    borderRadius: 5, 
+    justifyContent: 'center'
+  },
+  modernBadgeDiffText: { 
+    fontSize: 8, 
+    fontWeight: '700' 
+  },
+  modernBadgeSpacePlaceholder: {
+    height: 14,
+    width: '100%'
+  }
 });
+
