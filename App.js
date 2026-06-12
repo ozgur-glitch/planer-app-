@@ -236,15 +236,20 @@ export default function App() {
   };
 
   const handleExport = async () => {
-    setTimeout(async () => {
-      try {
-        // Fix: Exportiert exakt die identische Objekt-Struktur, die saveData/loadData auch nutzen
-        const data = JSON.stringify({ shifts, personNames, isDarkMode, schichtTypen, sollStunden, sollNachtStunden });
-        await Share.share({ message: data, title: 'Planer Backup' });
-      } catch (e) {
-        Alert.alert("Fehler", "Export konnte nicht durchgeführt werden.");
-      }
-    }, 50);
+    try {
+      const exportPayload = { 
+        shifts, 
+        personNames, 
+        isDarkMode, 
+        schichtTypen, 
+        sollStunden, 
+        sollNachtStunden 
+      };
+      const data = JSON.stringify(exportPayload);
+      await Share.share({ message: data, title: 'Planer Backup' });
+    } catch (e) {
+      Alert.alert("Fehler", "Export konnte nicht durchgeführt werden.");
+    }
   };
 
   const handleImport = async () => {
@@ -261,7 +266,6 @@ export default function App() {
         setRangeStartIdx(0);
         setRangeEndIdx(parsed.shifts.length - 1);
         
-        // Fix: Speichert die importierten Daten sofort asynchron in das AsyncStorage, damit sie permanent gesichert sind
         await AsyncStorage.setItem('@planer_nano_final_v5', JSON.stringify({
           shifts: parsed.shifts,
           personNames: parsed.personNames || personNames,
@@ -540,7 +544,6 @@ export default function App() {
       const endStr = s.customEnd_p1 !== null ? s.customEnd_p1 : (globalSchicht ? globalSchicht.e : '');
       const pauseStr = s.customPause_p1 !== null ? s.customPause_p1 : (globalSchicht ? globalSchicht.p : '0');
 
-      // Wenn die Schicht als krank markiert ist (Krank-Indikator in p1Col)
       if (s.p1Col === 'krank') {
         if (!startStr || !endStr) return;
         const [sH, sM] = startStr.split(':').map(Number);
@@ -1159,7 +1162,6 @@ export default function App() {
                           {personKeys.map(pk => {
                             const isSick = s[pk+'Col'] === 'krank';
                             const cellBg = isSick ? '#e91e63' : s[pk+'Col'];
-                            // Schicht bleibt sichtbar, wird bei Krankheit nur durch ein medizinisches Symbol ergänzt
                             const cellLabel = isSick ? `✚ ${s[pk]}` : s[pk];
                             return (
                               <TouchableOpacity 
@@ -1307,12 +1309,10 @@ export default function App() {
                     </View>
                   ))}
                   
-                  {/* Krank markieren Option */}
                   <View style={styles.optContainer}>
                     <TouchableOpacity 
                       style={[styles.opt, {backgroundColor: '#e91e63', borderRadius: 12, width: '100%', margin: 0, paddingVertical: 4, justifyContent: 'center', alignItems: 'center'}]} 
                       onPress={() => { 
-                        // Behält das ursprüngliche Schichtkürzel im DB-Feld bei, markiert aber die Farbe als krank
                         setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk+'Col']: 'krank'} : r)); 
                         if (copyModeActive) { setCopiedValue({ label: 'KRANK', color: 'krank' }); }
                         setModalVisible(false); 
@@ -1514,7 +1514,6 @@ const styles = StyleSheet.create({
   optContainer: { width: '22%', aspectRatio: 1, margin: '1.5%', position: 'relative', justifyContent: 'center', alignItems: 'center' },
   opt: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 2 },
   timeEditIconBtn: { position: 'absolute', right: 2, top: 2, backgroundColor: 'rgba(255,255,255,0.8)', borderRadius: 8, width: 16, height: 16, justifyContent: 'center', alignItems: 'center', elevation: 2 },
-  
   timeEditBox: { marginTop: 15, borderWidth: 1, borderRadius: 12, padding: 12 },
   timeInputRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   timeInputWrapper: { flex: 1, marginHorizontal: 3 },
@@ -1522,7 +1521,6 @@ const styles = StyleSheet.create({
   timeTextInput: { borderWidth: 1, borderRadius: 6, height: 36, paddingHorizontal: 4, fontSize: 12, textAlign: 'center' },
   timeActionRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 14 },
   timeBtnSmall: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 6 },
-  
   input: { borderBottomWidth: 2, fontSize: 22, textAlign: 'center', marginBottom: 15 },
   saveBtn: { paddingVertical: 12, paddingHorizontal: 10, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   modalButtonRowHorizontal: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', flexWrap: 'nowrap' },
@@ -1535,124 +1533,36 @@ const styles = StyleSheet.create({
   paletteRow: { flexDirection: 'row', justifyContent: 'flex-start', flexWrap: 'wrap', marginBottom: 15, paddingHorizontal: 5, gap: 8 },
   paletteCircle: { width: 32, height: 32, borderRadius: 16 },
   divider: { height: 1, width: '100%', marginVertical: 12 },
-  
   searchFilterContainer: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center', borderBottomWidth: 1 },
   searchBarButton: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.04)' },
   searchText: { fontSize: 12, fontWeight: '500' },
   clearFilterBtn: { paddingLeft: 10, justifyContent: 'center', alignItems: 'center' },
   monthFilterItem: { paddingVertical: 14, paddingHorizontal: 10, borderBottomWidth: 0.5, width: '100%' },
-
   devCard: { borderWidth: 1, paddingVertical: 15, paddingHorizontal: 18, marginBottom: 30 },
   devRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
   devLabel: { fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
   devValue: { fontSize: 14, fontWeight: 'bold' },
   devDivider: { height: 0.5, width: '100%', marginVertical: 10 },
-
   copyModeBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8, marginLeft: 8 },
   copyModeBtnTxt: { fontSize: 11, fontWeight: 'bold' },
   copyInfoBar: { paddingVertical: 6, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   copyInfoBarTxt: { color: 'white', fontSize: 11, fontWeight: '600', textAlign: 'center' },
-
   myPlanRow: { flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 0.5, alignItems: 'center' },
   myPlanRowHeaderTxt: { fontSize: 9, fontWeight: 'bold' },
-
-  modernStatsDashboardGrid: { 
-    paddingHorizontal: 10, 
-    paddingTop: 10, 
-    paddingBottom: 8,
-  },
-  modernDashboardRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'stretch'
-  },
-  modernStatTileVertical: { 
-    minWidth: 78,
-    flex: 1,
-    minHeight: 115,
-    borderRadius: 12, 
-    padding: 6, 
-    borderWidth: 1, 
-    elevation: 2, 
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    marginHorizontal: 3,
-    justifyContent: 'space-between'
-  },
-  modernTileHeader: { 
-    flexDirection: 'column', 
-    alignItems: 'center', 
-    marginBottom: 4 
-  },
-  modernIconBadge: { 
-    width: 22, 
-    height: 22, 
-    borderRadius: 6, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    marginBottom: 3 
-  },
-  modernTileLabel: { 
-    fontSize: 8.5, 
-    fontWeight: '700', 
-    color: '#888', 
-    textAlign: 'center',
-    letterSpacing: 0.1
-  },
-  modernMainRow: { 
-    flexDirection: 'row', 
-    alignItems: 'baseline', 
-    justifyContent: 'center',
-    marginVertical: 2 
-  },
-  modernValueHighlight: { 
-    fontSize: 15, 
-    fontWeight: '800', 
-    letterSpacing: -0.5 
-  },
-  modernUnit: { 
-    fontSize: 8, 
-    fontWeight: '600', 
-    marginLeft: 2 
-  },
-  modernSollRowElement: { 
-    flexDirection: 'row', 
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%'
-  },
-  modernSollInlineLabel: {
-    fontSize: 8,
-    fontWeight: '600'
-  },
-  modernSollInput: { 
-    width: 34, 
-    fontSize: 9, 
-    fontWeight: '700', 
-    paddingHorizontal: 2, 
-    borderRadius: 4, 
-    textAlign: 'center', 
-    height: 18,
-    paddingVertical: 0
-  },
-  modernBadgeDiff: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    alignSelf: 'stretch',
-    paddingVertical: 1.5, 
-    paddingHorizontal: 2, 
-    borderRadius: 5, 
-    justifyContent: 'center'
-  },
-  modernBadgeDiffText: { 
-    fontSize: 8, 
-    fontWeight: '700' 
-  },
-  modernBadgeSpacePlaceholder: {
-    height: 14,
-    width: '100%'
-  }
+  modernStatsDashboardGrid: { paddingHorizontal: 10, paddingTop: 10, paddingBottom: 8 },
+  modernDashboardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'stretch' },
+  modernStatTileVertical: { minWidth: 78, flex: 1, minHeight: 115, borderRadius: 12, padding: 6, borderWidth: 1, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, marginHorizontal: 3, justifyContent: 'space-between' },
+  modernTileHeader: { flexDirection: 'column', alignItems: 'center', marginBottom: 4 },
+  modernIconBadge: { width: 22, height: 22, borderRadius: 6, justifyContent: 'center', alignItems: 'center', marginBottom: 3 },
+  modernTileLabel: { fontSize: 8.5, fontWeight: '700', color: '#888', textAlign: 'center', letterSpacing: 0.1 },
+  modernMainRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', marginVertical: 2 },
+  modernValueHighlight: { fontSize: 15, fontWeight: '800', letterSpacing: -0.5 },
+  modernUnit: { fontSize: 8, fontWeight: '600', marginLeft: 2 },
+  modernSollRowElement: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' },
+  modernSollInlineLabel: { fontSize: 8, fontWeight: '600' },
+  modernSollInput: { width: 34, fontSize: 9, fontWeight: '700', paddingHorizontal: 2, borderRadius: 4, textAlign: 'center', height: 18, paddingVertical: 0 },
+  modernBadgeDiff: { flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', paddingVertical: 1.5, paddingHorizontal: 2, borderRadius: 5, justifyContent: 'center' },
+  modernBadgeDiffText: { fontSize: 8, fontWeight: '700' },
+  modernBadgeSpacePlaceholder: { height: 14, width: '100%' }
 });
 
