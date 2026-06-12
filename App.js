@@ -24,7 +24,7 @@ const generateYear2026 = (personKeys) => {
       datum: datumStr,
       ...Object.fromEntries(personKeys.map(k => [k, '--'])),
       ...Object.fromEntries(personKeys.map(k => [k + 'Col', 'transparent'])),
-      // Zusätzliche persistente Felder für manuelle Überschreibungen in "Mein Plan"
+      // Zusätzliche persistent Felder für manuelle Überschreibungen in "Mein Plan"
       customStart_p1: null,
       customEnd_p1: null,
       customPause_p1: null,
@@ -238,7 +238,8 @@ export default function App() {
   const handleExport = async () => {
     setTimeout(async () => {
       try {
-        const data = JSON.stringify({ shifts, personNames, schichtTypen, sollStunden, sollNachtStunden });
+        // Fix: Exportiert exakt die identische Objekt-Struktur, die saveData/loadData auch nutzen
+        const data = JSON.stringify({ shifts, personNames, isDarkMode, schichtTypen, sollStunden, sollNachtStunden });
         await Share.share({ message: data, title: 'Planer Backup' });
       } catch (e) {
         Alert.alert("Fehler", "Export konnte nicht durchgeführt werden.");
@@ -246,7 +247,7 @@ export default function App() {
     }, 50);
   };
 
-  const handleImport = () => {
+  const handleImport = async () => {
     if (!backupInput) { Alert.alert("Hinweis", "Bitte füge zuerst einen Code ein."); return; }
     try {
       const parsed = JSON.parse(backupInput.trim());
@@ -254,12 +255,24 @@ export default function App() {
         setShifts(parsed.shifts);
         if (parsed.personNames) setPersonNames(parsed.personNames);
         if (parsed.schichtTypen) setSchichtTypen(parsed.schichtTypen);
+        if (parsed.isDarkMode !== undefined) setIsDarkMode(parsed.isDarkMode);
         if (parsed.sollStunden !== undefined) setSollStunden(parsed.sollStunden);
         if (parsed.sollNachtStunden !== undefined) setSollNachtStunden(parsed.sollNachtStunden);
         setRangeStartIdx(0);
         setRangeEndIdx(parsed.shifts.length - 1);
+        
+        // Fix: Speichert die importierten Daten sofort asynchron in das AsyncStorage, damit sie permanent gesichert sind
+        await AsyncStorage.setItem('@planer_nano_final_v5', JSON.stringify({
+          shifts: parsed.shifts,
+          personNames: parsed.personNames || personNames,
+          isDarkMode: parsed.isDarkMode !== undefined ? parsed.isDarkMode : isDarkMode,
+          schichtTypen: parsed.schichtTypen || schichtTypen,
+          sollStunden: parsed.sollStunden !== undefined ? parsed.sollStunden : sollStunden,
+          sollNachtStunden: parsed.sollNachtStunden !== undefined ? parsed.sollNachtStunden : sollNachtStunden
+        }));
+
         setBackupInput('');
-        Alert.alert("Erfolg", "Import abgeschlossen!");
+        Alert.alert("Erfolg", "Import abgeschlossen und dauerhaft gespeichert!");
       }
     } catch (e) { Alert.alert("Fehler", "Ungültiger Code."); }
   };
@@ -519,15 +532,34 @@ export default function App() {
     let totalMinutes = 0;
     let totalNightMinutes = 0;
     let totalFeiertagMinutes = 0;
+    let totalSickMinutes = 0;
 
     currentMonthShifts.forEach(s => {
-      const label = s.customLabel_p1 !== null ? s.customLabel_p1 : s.p1;
-      if (label === '--' || !label) return;
-
       const globalSchicht = schichtTypen.find(t => t.l === s.p1);
       const startStr = s.customStart_p1 !== null ? s.customStart_p1 : (globalSchicht ? globalSchicht.s : '');
       const endStr = s.customEnd_p1 !== null ? s.customEnd_p1 : (globalSchicht ? globalSchicht.e : '');
       const pauseStr = s.customPause_p1 !== null ? s.customPause_p1 : (globalSchicht ? globalSchicht.p : '0');
+
+      // Wenn die Schicht als krank markiert ist (Krank-Indikator in p1Col)
+      if (s.p1Col === 'krank') {
+        if (!startStr || !endStr) return;
+        const [sH, sM] = startStr.split(':').map(Number);
+        const [eH, eM] = endStr.split(':').map(Number);
+        const pauseMin = parseInt(pauseStr) || 0;
+        if (isNaN(sH) || isNaN(sM) || isNaN(eH) || isNaN(eM)) return;
+
+        let startMin = sH * 60 + sM;
+        let endMin = eH * 60 + eM;
+        if (endMin < startMin) endMin += 24 * 60;
+        
+        const grossMinutes = endMin - startMin;
+        const netMinutes = Math.max(0, grossMinutes - pauseMin);
+        totalSickMinutes += netMinutes;
+        return;
+      }
+
+      const label = s.customLabel_p1 !== null ? s.customLabel_p1 : s.p1;
+      if (label === '--' || !label) return;
 
       if (!startStr || !endStr) return;
 
@@ -582,11 +614,13 @@ export default function App() {
     }
 
     const currentFeiertagHours = totalFeiertagMinutes / 60;
+    const currentSickHours = totalSickMinutes / 60;
 
     return {
       hours: currentActualHours.toFixed(2),
       nightHours: (totalNightMinutes / 60).toFixed(2),
       feiertagHours: currentFeiertagHours.toFixed(2),
+      sickHours: currentSickHours.toFixed(2),
       diffHours: diffHours.toFixed(2),
       hasSoll: parsedSollHours > 0,
       statusIcon,
@@ -612,7 +646,7 @@ export default function App() {
         </View>
 
         <View style={styles.modernStatsDashboardGrid}>
-          <View style={styles.modernDashboardRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modernDashboardRow}>
             
             <View style={[styles.modernStatTileVertical, { backgroundColor: theme.card, borderColor: theme.bor }]}>
               <View style={styles.modernTileHeader}>
@@ -622,7 +656,7 @@ export default function App() {
                 <Text style={styles.modernTileLabel} numberOfLines={1}>Arbeitszeit ({personNames.p1})</Text>
               </View>
               <View style={styles.modernMainRow}>
-                <Text style={[styles.modernValueHighlight, { color: theme.txt }]}>{calculateMyPlanStats.hours}</Text>
+                <Text style={[styles.modernValueHighlight, { color: theme.acc }]}>{calculateMyPlanStats.hours}</Text>
                 <Text style={[styles.modernUnit, { color: theme.sub }]}>Std. Ist</Text>
               </View>
               {calculateMyPlanStats.hasSoll ? (
@@ -653,7 +687,7 @@ export default function App() {
                 <Text style={styles.modernTileLabel} numberOfLines={1}>Nachtzuschlag</Text>
               </View>
               <View style={styles.modernMainRow}>
-                <Text style={[styles.modernValueHighlight, { color: theme.txt }]}>{calculateMyPlanStats.nightHours}</Text>
+                <Text style={[styles.modernValueHighlight, { color: '#ff9800' }]}>{calculateMyPlanStats.nightHours}</Text>
                 <Text style={[styles.modernUnit, { color: theme.sub }]}>Std. ges.</Text>
               </View>
               <View style={styles.modernBadgeSpacePlaceholder} />
@@ -661,22 +695,36 @@ export default function App() {
 
             <View style={[styles.modernStatTileVertical, { backgroundColor: theme.card, borderColor: theme.bor }]}>
               <View style={styles.modernTileHeader}>
-                <View style={[styles.modernIconBadge, { backgroundColor: 'rgba(233, 30, 99, 0.1)' }]}>
-                  <Ionicons name="ribbon" size={15} color="#e91e63" />
+                <View style={[styles.modernIconBadge, { backgroundColor: 'rgba(76, 175, 80, 0.1)' }]}>
+                  <Ionicons name="ribbon" size={15} color="#4caf50" />
                 </View>
-                <Text style={styles.modernTileLabel} numberOfLines={1}>Feiertage (Mo-Fr)</Text>
+                <Text style={styles.modernTileLabel} numberOfLines={1}>Feiertagszeit</Text>
               </View>
               <View style={styles.modernMainRow}>
-                <Text style={[styles.modernValueHighlight, { color: theme.txt }]}>{calculateMyPlanStats.feiertagHours}</Text>
-                <Text style={[styles.modernUnit, { color: theme.sub }]}>Std. Ist</Text>
+                <Text style={[styles.modernValueHighlight, { color: '#4caf50' }]}>{calculateMyPlanStats.feiertagHours}</Text>
+                <Text style={[styles.modernUnit, { color: theme.sub }]}>Std.</Text>
               </View>
               <View style={styles.modernBadgeSpacePlaceholder} />
             </View>
 
             <View style={[styles.modernStatTileVertical, { backgroundColor: theme.card, borderColor: theme.bor }]}>
               <View style={styles.modernTileHeader}>
-                <View style={[styles.modernIconBadge, { backgroundColor: 'rgba(156, 39, 176, 0.1)' }]}>
-                  <Ionicons name="flag" size={15} color="#9c27b0" />
+                <View style={[styles.modernIconBadge, { backgroundColor: 'rgba(233, 30, 99, 0.1)' }]}>
+                  <Ionicons name="medkit" size={15} color="#e91e63" />
+                </View>
+                <Text style={styles.modernTileLabel} numberOfLines={1}>Krankheitsstunden</Text>
+              </View>
+              <View style={styles.modernMainRow}>
+                <Text style={[styles.modernValueHighlight, { color: '#e91e63' }]}>{calculateMyPlanStats.sickHours}</Text>
+                <Text style={[styles.modernUnit, { color: theme.sub }]}>Std.</Text>
+              </View>
+              <View style={styles.modernBadgeSpacePlaceholder} />
+            </View>
+
+            <View style={[styles.modernStatTileVertical, { backgroundColor: theme.card, borderColor: theme.bor, minWidth: 90 }]}>
+              <View style={styles.modernTileHeader}>
+                <View style={[styles.modernIconBadge, { backgroundColor: 'rgba(25, 118, 210, 0.1)' }]}>
+                  <Ionicons name="options" size={15} color={theme.acc} />
                 </View>
                 <Text style={styles.modernTileLabel} numberOfLines={1}>Sollvorgabe</Text>
               </View>
@@ -695,7 +743,7 @@ export default function App() {
               </View>
             </View>
 
-          </View>
+          </ScrollView>
         </View>
 
         <ScrollView ref={myPlanVerticalScrollRef} style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 150 }}>
@@ -711,12 +759,13 @@ export default function App() {
               const globalSchicht = schichtTypen.find(t => t.l === s.p1);
               const isEdited = s.customLabel_p1 !== null || s.customStart_p1 !== null || s.customEnd_p1 !== null || s.customPause_p1 !== null;
               
-              const label = s.customLabel_p1 !== null ? s.customLabel_p1 : s.p1;
+              const isSick = s.p1Col === 'krank';
+              const label = isSick ? `✚ ${s.p1}` : (s.customLabel_p1 !== null ? s.customLabel_p1 : s.p1);
               const start = s.customStart_p1 !== null ? s.customStart_p1 : (globalSchicht ? globalSchicht.s : '--:--');
               const end = s.customEnd_p1 !== null ? s.customEnd_p1 : (globalSchicht ? globalSchicht.e : '--:--');
               const pause = s.customPause_p1 !== null ? s.customPause_p1 : (globalSchicht ? globalSchicht.p : '0');
               
-              const color = s.customColor_p1 !== null ? s.customColor_p1 : (s.p1Col !== 'transparent' ? s.p1Col : (globalSchicht ? globalSchicht.c : 'transparent'));
+              const color = isSick ? '#e91e63' : (s.customColor_p1 !== null ? s.customColor_p1 : (s.p1Col !== 'transparent' ? s.p1Col : (globalSchicht ? globalSchicht.c : 'transparent')));
               const ft = isHessenFeiertag(s.datum);
 
               return (
@@ -777,6 +826,28 @@ export default function App() {
 
         <ScrollView style={{flex: 1}} removeClippedSubviews={true} contentContainerStyle={{padding: 10, paddingBottom: 150}}>
           
+          {/* Krankheitsstatistik */}
+          <View style={styles.statHeader}><Ionicons name="medkit-outline" size={18} color="#e91e63" /><Text style={[styles.statTitle, {color: theme.txt}]}>Krankheitsstatistik (Tage)</Text></View>
+          <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
+            <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
+              <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 120}]}>NAME</Text>
+              <View style={{flexDirection: 'row', flex: 1, justifyContent: 'flex-end', paddingRight: 20}}>
+                <Text style={[styles.miniBoxTxt, {color: theme.sub, fontWeight: 'bold', fontSize: 9}]}>KRANKHEITSTAGE TOTAL</Text>
+              </View>
+            </View>
+            {personKeys.map(pk => {
+              const sickDaysCount = filteredShifts.filter(s => s[pk + 'Col'] === 'krank').length;
+              return (
+                <View key={pk} style={[styles.matrixRow, {borderBottomColor: theme.bor}]}>
+                  <Text style={[styles.matrixName, {color: theme.txt, width: 120}]} numberOfLines={1}>{personNames[pk]}</Text>
+                  <View style={{flexDirection: 'row', flex: 1, justifyContent: 'flex-end', paddingRight: 40}}>
+                    <Text style={{fontSize: 13, fontWeight: 'bold', color: sickDaysCount > 0 ? '#e91e63' : theme.sub}}>{sickDaysCount}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+
           <View style={styles.statHeader}><Ionicons name="calendar-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Feiertagsstatistik (Mo–Fr) (%)</Text></View>
           <View style={[styles.matrixCard, {backgroundColor: theme.card}]}>
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
@@ -871,8 +942,8 @@ export default function App() {
                       <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around'}}>
                           {personKeys.map(p2 => {
                               if (p1 === p2) return <Text key={p2} style={{width: 22, textAlign: 'center', color: '#ccc', fontSize: 8}}>--</Text>;
-                              const common = filteredShifts.filter(s => (s[p1] === 'SV' && s[p2] === 'PDI') || (s[p1] === 'PDI' && s[p2] === 'SV')).length;
-                              const p1T = filteredShifts.filter(s => s[p1] === 'SV' || s[p1] === 'PDI').length;
+                              const common = filteredShifts.filter(s => ((s[p1] === 'SV' && s[p2] === 'PDI') || (s[p1] === 'PDI' && s[p2] === 'SV'))).length;
+                              const p1T = filteredShifts.filter(s => (s[p1] === 'SV' || s[p1] === 'PDI')).length;
                               const perc = p1T > 0 ? Math.round((common/p1T)*100) : 0;
                               return (<Text key={p2} style={{width: 22, textAlign: 'center', fontSize: 8, fontWeight: 'bold', color: perc > 0 ? theme.txt : '#ddd'}}>{perc > 0 ? perc : '·'}</Text>);
                           })}
@@ -921,7 +992,7 @@ export default function App() {
           <View style={[styles.matrixCard, {backgroundColor: theme.card}]}>
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
               <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 80}]}>NAME</Text>
-              <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around shadow'}}><Text style={[styles.miniBoxTxt, {color: '#e91e63', fontWeight: 'bold'}]}>SAMSTAG</Text><Text style={[styles.miniBoxTxt, {color: '#e91e63', fontWeight: 'bold'}]}>SONNTAG</Text></View>
+              <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around'}}><Text style={[styles.miniBoxTxt, {color: '#e91e63', fontWeight: 'bold'}]}>SAMSTAG</Text><Text style={[styles.miniBoxTxt, {color: '#e91e63', fontWeight: 'bold'}]}>SONNTAG</Text></View>
             </View>
             {personKeys.map(pk => {
               const saS = filteredShifts.filter(s => s.tag === 'Sa' && s[pk] !== '--');
@@ -1017,7 +1088,7 @@ export default function App() {
           </View>
 
           {copyModeActive && (
-            <View style={[styles.copyInfoBar, { backgroundColor: copiedValue ? copiedValue.color : '#555' }]}>
+            <View style={[styles.copyInfoBar, { backgroundColor: copiedValue ? (copiedValue.color === 'krank' ? '#e91e63' : copiedValue.color) : '#555' }]}>
               <Text style={styles.copyInfoBarTxt}>
                 {copiedValue 
                   ? `Muster [${copiedValue.label}] gewählt. Tippe Zellen zum Einfügen.` 
@@ -1085,17 +1156,23 @@ export default function App() {
                       <View key={s.id}>
                         {isNewM && <View style={[styles.monthLabel, {width: personKeys.length * 60}]} />}
                         <View style={{flexDirection: 'row'}}>
-                          {personKeys.map(pk => (
-                            <TouchableOpacity 
-                              key={pk} 
-                              delayPressIn={0}
-                              activeOpacity={0.5}
-                              style={[styles.cell, {backgroundColor: s[pk+'Col'], borderBottomColor: theme.bor}]} 
-                              onPress={() => handleCellPress(s.id, pk, s[pk], s[pk+'Col'])}
-                            >
-                              <Text style={[styles.cellTxt, {color: s[pk+'Col'] === 'transparent' ? theme.txt : 'white'}]}>{s[pk]}</Text>
-                            </TouchableOpacity>
-                          ))}
+                          {personKeys.map(pk => {
+                            const isSick = s[pk+'Col'] === 'krank';
+                            const cellBg = isSick ? '#e91e63' : s[pk+'Col'];
+                            // Schicht bleibt sichtbar, wird bei Krankheit nur durch ein medizinisches Symbol ergänzt
+                            const cellLabel = isSick ? `✚ ${s[pk]}` : s[pk];
+                            return (
+                              <TouchableOpacity 
+                                key={pk} 
+                                delayPressIn={0}
+                                activeOpacity={0.5}
+                                style={[styles.cell, {backgroundColor: cellBg, borderBottomColor: theme.bor}]} 
+                                onPress={() => handleCellPress(s.id, pk, s[pk], s[pk+'Col'])}
+                              >
+                                <Text style={[styles.cellTxt, {color: cellBg === 'transparent' ? theme.txt : 'white'}]}>{cellLabel}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
                         </View>
                       </View>
                     );
@@ -1208,15 +1285,15 @@ export default function App() {
                   {schichtTypen.map((s, i) => (
                     <View key={i} style={styles.optContainer}>
                       <TouchableOpacity 
-                        style={[styles.opt, {backgroundColor: s.c, borderRadius: 12, width: '100%', margin: 0}]} 
+                        style={[styles.opt, {backgroundColor: s.c, borderRadius: 12, width: '100%', margin: 0, paddingVertical: 4}]} 
                         onPress={() => { 
                           setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: s.l, [selectedCell.pk+'Col']: s.c} : r)); 
                           if (copyModeActive) { setCopiedValue({ label: s.l, color: s.c }); }
                           setModalVisible(false); 
                         }}
                       >
-                        <Text style={{color: 'white', fontWeight: 'bold', fontSize: 11}}>{s.l}</Text>
-                        <Text style={{color: 'rgba(255,255,255,0.8)', fontSize: 7, marginTop: 2}} numberOfLines={1}>
+                        <Text style={{color: 'white', fontWeight: 'bold', fontSize: 10, textAlign: 'center'}} numberOfLines={1}>{s.l}</Text>
+                        <Text style={{color: 'rgba(255,255,255,0.8)', fontSize: 7, marginTop: 1, textAlign: 'center'}} numberOfLines={1}>
                           {s.s || '--'}-{s.e || '--'}
                         </Text>
                       </TouchableOpacity>
@@ -1230,17 +1307,33 @@ export default function App() {
                     </View>
                   ))}
                   
+                  {/* Krank markieren Option */}
                   <View style={styles.optContainer}>
                     <TouchableOpacity 
-                      style={[styles.opt, {backgroundColor: isDarkMode ? '#2c2c2c' : '#f0f0f0', borderRadius: 12, borderWidth: 1, borderColor: isDarkMode ? '#444' : '#ddd', width: '100%', margin: 0}]} 
+                      style={[styles.opt, {backgroundColor: '#e91e63', borderRadius: 12, width: '100%', margin: 0, paddingVertical: 4, justifyContent: 'center', alignItems: 'center'}]} 
+                      onPress={() => { 
+                        // Behält das ursprüngliche Schichtkürzel im DB-Feld bei, markiert aber die Farbe als krank
+                        setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk+'Col']: 'krank'} : r)); 
+                        if (copyModeActive) { setCopiedValue({ label: 'KRANK', color: 'krank' }); }
+                        setModalVisible(false); 
+                      }}
+                    >
+                      <Ionicons name="medkit-outline" size={12} color="white" />
+                      <Text style={{color: 'white', fontSize: 9, fontWeight: 'bold', marginTop: 1, textAlign: 'center'}} numberOfLines={1}>KRANK</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.optContainer}>
+                    <TouchableOpacity 
+                      style={[styles.opt, {backgroundColor: isDarkMode ? '#2c2c2c' : '#f0f0f0', borderRadius: 12, borderWidth: 1, borderColor: isDarkMode ? '#444' : '#ddd', width: '100%', margin: 0, paddingVertical: 4, justifyContent: 'center', alignItems: 'center'}]} 
                       onPress={() => { 
                         setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: '--', [selectedCell.pk+'Col']: 'transparent'} : r)); 
                         if (copyModeActive) { setCopiedValue({ label: '--', color: 'transparent' }); }
                         setModalVisible(false); 
                       }}
                     >
-                      <Ionicons name="remove-circle-outline" size={14} color={isDarkMode ? '#aaa' : '#888'} />
-                      <Text style={{color: isDarkMode ? '#aaa' : '#888', fontSize: 9, fontWeight: 'bold'}}>FREI</Text>
+                      <Ionicons name="remove-circle-outline" size={12} color={isDarkMode ? '#aaa' : '#888'} />
+                      <Text style={{color: isDarkMode ? '#aaa' : '#888', fontSize: 9, fontWeight: 'bold', marginTop: 1, textAlign: 'center'}} numberOfLines={1}>FREI</Text>
                     </TouchableOpacity>
                   </View>
               </View>
@@ -1418,8 +1511,8 @@ const styles = StyleSheet.create({
   modalBack: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
   modalBox: { width: '85%', padding: 25, borderRadius: 24 },
   modalGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start' },
-  optContainer: { width: '22%', aspectRatio: 1, margin: '1.5%', position: 'relative' },
-  opt: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  optContainer: { width: '22%', aspectRatio: 1, margin: '1.5%', position: 'relative', justifyContent: 'center', alignItems: 'center' },
+  opt: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 2 },
   timeEditIconBtn: { position: 'absolute', right: 2, top: 2, backgroundColor: 'rgba(255,255,255,0.8)', borderRadius: 8, width: 16, height: 16, justifyContent: 'center', alignItems: 'center', elevation: 2 },
   
   timeEditBox: { marginTop: 15, borderWidth: 1, borderRadius: 12, padding: 12 },
@@ -1437,9 +1530,9 @@ const styles = StyleSheet.create({
   backupBtn: { padding: 12, borderRadius: 10, flex: 0.48, alignItems: 'center' },
   btnTxt: { color: 'white', fontWeight: 'bold', fontSize: 11 },
   customShiftContainer: { flexDirection: 'row', borderWidth: 1, borderRadius: 10, overflow: 'hidden', marginBottom: 10 },
-  customInput: { flex: 1, height: 40, paddingHorizontal: 12, fontSize: 13, fontWeight: 'bold' },
-  customAddBtn: { width: 80, justifyContent: 'center', alignItems: 'center' },
-  paletteRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15, paddingHorizontal: 5 },
+  customInput: { width: '70%', height: 40, paddingHorizontal: 12, fontSize: 13, fontWeight: 'bold' },
+  customAddBtn: { width: '30%', justifyContent: 'center', alignItems: 'center' },
+  paletteRow: { flexDirection: 'row', justifyContent: 'flex-start', flexWrap: 'wrap', marginBottom: 15, paddingHorizontal: 5, gap: 8 },
   paletteCircle: { width: 32, height: 32, borderRadius: 16 },
   divider: { height: 1, width: '100%', marginVertical: 12 },
   
@@ -1474,6 +1567,7 @@ const styles = StyleSheet.create({
     alignItems: 'stretch'
   },
   modernStatTileVertical: { 
+    minWidth: 78,
     flex: 1,
     minHeight: 115,
     borderRadius: 12, 
