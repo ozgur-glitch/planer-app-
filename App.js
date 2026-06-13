@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Modal, TextInput, StatusBar, SafeAreaView, Alert, Share } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Modal, TextInput, StatusBar, SafeAreaView, Alert, Share, Clipboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -235,6 +235,7 @@ export default function App() {
     } catch (e) {}
   };
 
+  // Von Grund auf neu aufgebaute und stabilisierte Export-Funktion
   const handleExport = async () => {
     try {
       const exportPayload = { 
@@ -245,40 +246,72 @@ export default function App() {
         sollStunden, 
         sollNachtStunden 
       };
-      const data = JSON.stringify(exportPayload);
-      await Share.share({ message: data, title: 'Planer Backup' });
+      
+      const dataString = JSON.stringify(exportPayload);
+      
+      // Versuche das native Share-Menü aufzurufen
+      const result = await Share.share({
+        message: dataString,
+        title: 'Schichtplaner Backup'
+      });
+      
+      // Unabhängig vom Ausgang des nativen Dialogs sichern wir den String zusätzlich in die Zwischenablage
+      Clipboard.setString(dataString);
+      Alert.alert("Sicherung kopiert", "Der Backup-Code wurde zusätzlich direkt in deine Zwischenablage kopiert!");
     } catch (e) {
-      Alert.alert("Fehler", "Export konnte nicht durchgeführt werden.");
+      // Fallback falls der native Share-Dialog auf manchen Android/iOS-Geräten blockiert wird
+      try {
+        Clipboard.setString(JSON.stringify({ shifts, personNames, isDarkMode, schichtTypen, sollStunden, sollNachtStunden }));
+        Alert.alert("Export", "Backup-Code wurde direkt in die Zwischenablage kopiert (Teilen-Dialog nicht verfügbar).");
+      } catch (err) {
+        Alert.alert("Fehler", "Export konnte nicht durchgeführt werden.");
+      }
     }
   };
 
+  // Von Grund auf neu aufgebaute und stabilisierte Import-Funktion
   const handleImport = async () => {
-    if (!backupInput) { Alert.alert("Hinweis", "Bitte füge zuerst einen Code ein."); return; }
+    const trimmedInput = backupInput ? backupInput.trim() : '';
+    if (!trimmedInput) { 
+      Alert.alert("Hinweis", "Bitte füge zuerst einen gültigen Backup-Code in das Textfeld ein."); 
+      return; 
+    }
+    
     try {
-      const parsed = JSON.parse(backupInput.trim());
-      if (parsed.shifts) {
-        setShifts(parsed.shifts);
-        if (parsed.personNames) setPersonNames(parsed.personNames);
-        if (parsed.schichtTypen) setSchichtTypen(parsed.schichtTypen);
-        if (parsed.isDarkMode !== undefined) setIsDarkMode(parsed.isDarkMode);
-        if (parsed.sollStunden !== undefined) setSollStunden(parsed.sollStunden);
-        if (parsed.sollNachtStunden !== undefined) setSollNachtStunden(parsed.sollNachtStunden);
-        setRangeStartIdx(0);
-        setRangeEndIdx(parsed.shifts.length - 1);
-        
-        await AsyncStorage.setItem('@planer_nano_final_v5', JSON.stringify({
-          shifts: parsed.shifts,
-          personNames: parsed.personNames || personNames,
-          isDarkMode: parsed.isDarkMode !== undefined ? parsed.isDarkMode : isDarkMode,
-          schichtTypen: parsed.schichtTypen || schichtTypen,
-          sollStunden: parsed.sollStunden !== undefined ? parsed.sollStunden : sollStunden,
-          sollNachtStunden: parsed.sollNachtStunden !== undefined ? parsed.sollNachtStunden : sollNachtStunden
-        }));
-
-        setBackupInput('');
-        Alert.alert("Erfolg", "Import abgeschlossen und dauerhaft gespeichert!");
+      const parsed = JSON.parse(trimmedInput);
+      
+      // Validierung ob die Pflichtdatenstruktur existiert
+      if (!parsed || !parsed.shifts || !Array.isArray(parsed.shifts)) {
+        Alert.alert("Fehler", "Ungültiges Datenformat. Der Code enthält keine kompatiblen Schichtdaten.");
+        return;
       }
-    } catch (e) { Alert.alert("Fehler", "Ungültiger Code."); }
+      
+      // Zustand-Updates ausführen
+      setShifts(parsed.shifts);
+      if (parsed.personNames) setPersonNames(parsed.personNames);
+      if (parsed.schichtTypen) setSchichtTypen(parsed.schichtTypen);
+      if (parsed.isDarkMode !== undefined) setIsDarkMode(parsed.isDarkMode);
+      if (parsed.sollStunden !== undefined) setSollStunden(parsed.sollStunden);
+      if (parsed.sollNachtStunden !== undefined) setSollNachtStunden(parsed.sollNachtStunden);
+      
+      setRangeStartIdx(0);
+      setRangeEndIdx(parsed.shifts.length - 1);
+      
+      // Sofortige, direkte Speicherung im AsyncStorage zur absoluten Verlust-Vermeidung
+      await AsyncStorage.setItem('@planer_nano_final_v5', JSON.stringify({
+        shifts: parsed.shifts,
+        personNames: parsed.personNames || personNames,
+        isDarkMode: parsed.isDarkMode !== undefined ? parsed.isDarkMode : isDarkMode,
+        schichtTypen: parsed.schichtTypen || schichtTypen,
+        sollStunden: parsed.sollStunden !== undefined ? parsed.sollStunden : sollStunden,
+        sollNachtStunden: parsed.sollNachtStunden !== undefined ? parsed.sollNachtStunden : sollNachtStunden
+      }));
+
+      setBackupInput('');
+      Alert.alert("Erfolg", "Backup erfolgreich importiert und permanent gespeichert!");
+    } catch (e) { 
+      Alert.alert("Fehler beim Import", "Der eingegebene Code ist fehlerhaft oder unvollständig. Bitte prüfe, ob du den gesamten String kopiert hast."); 
+    }
   };
 
   const jumpToCurrentDay = () => {
