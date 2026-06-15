@@ -1054,7 +1054,7 @@ export default function App() {
             })}
           </View>
 
-          {/* NEU: Krankmeldungs-Verteilung nach Schichten (%) */}
+          {/* KORRIGIERT: Krankmeldungs-Verteilung nach Schichten (%) */}
           <View style={styles.statHeader}><Ionicons name="analytics-outline" size={18} color="#b71c1c" /><Text style={[styles.statTitle, {color: theme.txt}]}>Krankmeldungs-Verteilung nach Schichten (%)</Text></View>
           <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
@@ -1070,18 +1070,21 @@ export default function App() {
               </View>
             </View>
             {personKeys.map(pk => {
-              // Filtere alle Krankmeldungen der Person im Zeitraum (Ausschluss von Freitagen, Erlaubnis von Wochenenden)
-              const sickDays = filteredShifts.filter(s => s[pk + 'Col'] === 'krank' && s.tag !== 'Fr');
-              const totalSick = sickDays.length;
+              // Hole alle echten Krankmeldungen der Person im definierten Zeitraum
+              const sickDays = filteredShifts.filter(s => s[pk + 'Col'] === 'krank');
+              
+              // Zähle nur Krankheitstage, die eine tatsächlich gültige hinterlegte Schicht im Kürzel-Datenfeld besitzen
+              const validSickShifts = sickDays.filter(s => schichtTypen.some(t => t.l === s[pk]));
+              const totalSickWithShifts = validSickShifts.length;
 
               return (
                 <View key={pk} style={[styles.matrixRow, {borderBottomColor: theme.bor}]}>
                   <Text style={[styles.matrixName, {color: theme.txt, width: 55}]} numberOfLines={1}>{personNames[pk]}</Text>
                   <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-between'}}>
                     {schichtTypen.map((t, i) => {
-                      // Prüfen, welche Schicht im regulären Datenbank-Kürzel-Feld hinterlegt war
-                      const count = sickDays.filter(s => s[pk] === t.l).length;
-                      const p = totalSick > 0 ? Math.round((count / totalSick) * 100) : 0;
+                      // Ermittle die Häufigkeit exakt dieser Schicht an den Krankheitstagen
+                      const count = validSickShifts.filter(s => s[pk] === t.l).length;
+                      const p = totalSickWithShifts > 0 ? Math.round((count / totalSickWithShifts) * 100) : 0;
                       return (
                         <View key={i} style={{width: colWidth, alignItems: 'center'}}>
                           <Text style={[styles.matrixCellTxt, {color: p > 0 ? theme.txt : '#ccc'}]}>
@@ -1096,7 +1099,7 @@ export default function App() {
             })}
           </View>
 
-          <View style={styles.statHeader}><Ionicons name="calendar-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Feiertagsstatistik (Mo–Fr) (%)</Text></View>
+          <View style={styles.calendarHeader}><Ionicons name="calendar-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Feiertagsstatistik (Mo–Fr) (%)</Text></View>
           <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
               <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 80}]}>NAME</Text>
@@ -1801,6 +1804,7 @@ const styles = StyleSheet.create({
   tabBar: { flexDirection: 'row', height: 85, borderTopWidth: 1, paddingBottom: 25, paddingHorizontal: 20, position: 'absolute', bottom: 0, left: 0, right: 0 },
   tab: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   statHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingLeft: 5, marginTop: 15 },
+  calendarHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingLeft: 5, marginTop: 15 },
   statTitle: { fontSize: 14, fontWeight: 'bold', marginLeft: 8 },
   matrixCard: { borderRadius: 18, padding: 12, elevation: 3, marginBottom: 10 },
   matrixHeader: { flexDirection: 'row', borderBottomWidth: 1, paddingBottom: 8, marginBottom: 5 },
