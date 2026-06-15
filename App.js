@@ -22,9 +22,9 @@ const generateYear2026 = (personKeys) => {
       id: String(idCounter++),
       tag: tagStr,
       datum: datumStr,
-      ...Object.fromEntries(personKeys.map(k => [k, '--'])),
+      ...Object.fromEntries(personKeys.map(k => [k, '—'])),
       ...Object.fromEntries(personKeys.map(k => [k + 'Col', 'transparent'])),
-      // Zusätzliche persistent Felder für manuelle Überschreibungen in "Mein Plan"
+      // Zusätzliche persistent Felder für manuelle Überschreibungen in „Mein Plan“
       customStart_p1: null,
       customEnd_p1: null,
       customPause_p1: null,
@@ -54,24 +54,31 @@ export default function App() {
 
   // Zustände für den historischen Suchfilter
   const [searchModalVisible, setSearchModalVisible] = useState(false);
-  const [selectedMonthFilter, setSelectedMonthFilter] = useState(''); // Format: "MM.YYYY" oder leer für aktuell
+  const [selectedMonthFilter, setSelectedMonthFilter] = useState(''); // Format: „MM.YYYY“ oder leer für aktuell
 
   // Zustände für frei konfigurierbare manuelle Schichten im Modal
   const [customLabel, setCustomLabel] = useState('');
-  const [customColor, setCustomColor] = useState('#e91e63');
+  const [customColor, setCustomColor] = useState('#FF1493');
 
   // Zustände für den Schicht-Kopier-Modus
   const [copyModeActive, setCopyModeActive] = useState(false);
-  const [copiedValue, setCopiedValue] = useState(null); // { label: '...', color: '...' }
+  const [copiedValue, setCopiedValue] = useState(null); // { label: '…', color: '…' }
 
   // Eingegebene Soll-Stunden pro Monat
   const [sollStunden, setSollStunden] = useState('');
   const [sollNachtStunden, setSollNachtStunden] = useState('');
 
-  // Schichtfarben identisch mit der Palette der vorgefertigten Schichten
+  // Urlaubs-Zustände für P1
+  const [maxUrlaubstageAktuell, setMaxUrlaubstageAktuell] = useState('30');
+  const [maxUrlaubstageFolgejahr, setMaxUrlaubstageFolgejahr] = useState('30');
+  const [urlaubGueltigkeit, setUrlaubGueltigkeit] = useState({}); // Mapping von shift.id -> 'aktuell' | 'folgejahr'
+  const [urlaubModalVisible, setUrlaubModalVisible] = useState(false);
+  const [pendingUrlaubCell, setPendingUrlaubCell] = useState(null);
+
+  // Schichtfarben für die Erstellung manueller Schichten (Eindeutig voneinander unterscheidbar)
   const customColorPalette = [
-    '#e91e63', '#4caf50', '#ff9800', '#ffc107', '#00bcd4', 
-    '#ff80ab', '#b39ddb', '#009688', '#9e9e9e', '#795548', '#9c27b0'
+    '#FF1493', '#1E90FF', '#FF4500', '#228B22', '#8A2BE2', 
+    '#FFD700', '#40E0D0', '#778899', '#D2691E', '#FF69B4', '#32CD32'
   ];
 
   const initialNames = { p1: 'P1', p2: 'P2', p3: 'P3', p4: 'P4', p5: 'P5', p6: 'P6', p7: 'P7', p8: 'P8', p9: 'P9', p10: 'P10' };
@@ -79,18 +86,18 @@ export default function App() {
   const personKeys = Object.keys(initialNames);
   const monate = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 
-  // Vordefinierte Schichten inklusive Start-, End- und Pausenzeiten
+  // Vordefinierte Schichten - FHR wurde wunschgemäß auf Lila (#8A2BE2) geändert
   const [schichtTypen, setSchichtTypen] = useState([
-    {l:'SV',c:'#e91e63', s:'06:00', e:'14:00', p:'30'}, 
-    {l:'PDI',c:'#4caf50', s:'06:00', e:'14:00', p:'30'}, 
-    {l:'QS',c:'#ff9800', s:'07:00', e:'15:30', p:'30'}, 
-    {l:'STL',c:'#ffc107', s:'07:00', e:'15:30', p:'30'}, 
-    {l:'FHR',c:'#00bcd4', s:'07:00', e:'15:30', p:'30'}, 
-    {l:'FD',c:'#ff80ab', s:'06:00', e:'14:30', p:'30'}, 
-    {l:'SD',c:'#b39ddb', s:'13:30', e:'22:00', p:'30'}, 
-    {l:'QC',c:'#009688', s:'07:00', e:'15:30', p:'30'}, 
-    {l:'TS',c:'#9e9e9e', s:'07:30', e:'16:00', p:'30'},
-    {l:'HRS',c:'#795548', s:'08:00', e:'16:30', p:'30'}
+    {l:'SV',  c:'#E6194B', s:'06:00', e:'14:00', p:'30'},  // Rot
+    {l:'PDI', c:'#3CB44B', s:'06:00', e:'14:00', p:'30'},  // Grün
+    {l:'QS',  c:'#FFE119', s:'07:00', e:'15:30', p:'30'},  // Gelb
+    {l:'STL', c:'#4363D8', s:'07:00', e:'15:30', p:'30'},  // Blau
+    {l:'FHR', c:'#8A2BE2', s:'07:00', e:'15:30', p:'30'},  // Lila (Geändert von Orange #F58231)
+    {l:'FD',  c:'#911EB4', s:'06:00', e:'14:30', p:'30'},  // Lila
+    {l:'SD',  c:'#46F0F0', s:'13:30', e:'22:00', p:'30'},  // Cyan / Hellblau
+    {l:'QC',  c:'#F032E6', s:'07:00', e:'15:30', p:'30'},  // Magenta / Pink
+    {l:'TS',  c:'#BCF60C', s:'07:30', e:'16:00', p:'30'},  // Limette
+    {l:'HRS', c:'#FABEBE', s:'08:00', e:'16:30', p:'30'}   // Rosa / Hellrot
   ]);
 
   // Zustand für die Bearbeitung von Schichtzeiten im Modal
@@ -99,7 +106,7 @@ export default function App() {
   const [editEndTime, setEditEndTime] = useState('');
   const [editPauseTime, setEditPauseTime] = useState('');
 
-  // Zustände für das manuelle Editieren eines einzelnen Tages in "Mein Plan"
+  // Zustände für das manuelle Editieren eines einzelnen Tages in „Mein Plan“
   const [myPlanModalVisible, setMyPlanModalVisible] = useState(false);
   const [myPlanSelectedDay, setMyPlanSelectedDay] = useState(null);
   const [myPlanEditLabel, setMyPlanEditLabel] = useState('');
@@ -175,6 +182,38 @@ export default function App() {
 
   const [shifts, setShifts] = useState(() => generateYear2026(Object.keys(initialNames)));
 
+  // Hilfsmapping zur dynamischen Berechnung der URL-Nummerierung für P1
+  const urlaubNummerierung = useMemo(() => {
+    let indexAktuell = 1;
+    let indexFolgejahr = 1;
+    const mapping = {};
+
+    shifts.forEach(s => {
+      const isUrlaub = s.p1 === 'URL' || (s.customLabel_p1 && s.customLabel_p1.trim().toUpperCase() === 'URL');
+      const isArbeitstag = s.tag !== 'Sa' && s.tag !== 'So';
+      const istFeiertag = isHessenFeiertag(s.datum) !== null;
+
+      if (isUrlaub) {
+        if (isArbeitstag && !istFeiertag) {
+          const gueltigkeit = urlaubGueltigkeit[s.id] || 'aktuell';
+          if (gueltigkeit === 'aktuell') {
+            mapping[s.id] = `URL${indexAktuell++}`;
+          } else {
+            mapping[s.id] = `URL${indexFolgejahr++}`;
+          }
+        } else {
+          mapping[s.id] = 'URL';
+        }
+      }
+    });
+
+    return {
+      mapping,
+      gesamtAktuell: indexAktuell - 1,
+      gesamtFolgejahr: indexFolgejahr - 1
+    };
+  }, [shifts, urlaubGueltigkeit]);
+
   const headerScrollRef = useRef(null);
   const mainVerticalScrollRef = useRef(null);
   const myPlanVerticalScrollRef = useRef(null);
@@ -185,9 +224,8 @@ export default function App() {
   useEffect(() => { 
     saveData(); 
     if (rangeEndIdx === 0 && shifts.length > 0) setRangeEndIdx(shifts.length - 1);
-  }, [shifts, personNames, isDarkMode, schichtTypen, sollStunden, sollNachtStunden]);
+  }, [shifts, personNames, isDarkMode, schichtTypen, sollStunden, sollNachtStunden, maxUrlaubstageAktuell, maxUrlaubstageFolgejahr, urlaubGueltigkeit]);
 
-  // Effekt für das automatische Scrollen zum heutigen Tag bei Tab-Wechsel
   useEffect(() => {
     if (activeTab === 'Schichten' && shifts.length > 0) {
       const timer = setTimeout(() => {
@@ -205,7 +243,10 @@ export default function App() {
 
   const saveData = async () => {
     try { 
-      await AsyncStorage.setItem('@planer_nano_final_v5', JSON.stringify({shifts, personNames, isDarkMode, schichtTypen, sollStunden, sollNachtStunden})); 
+      await AsyncStorage.setItem('@planer_nano_final_v5', JSON.stringify({
+        shifts, personNames, isDarkMode, schichtTypen, sollStunden, sollNachtStunden,
+        maxUrlaubstageAktuell, maxUrlaubstageFolgejahr, urlaubGueltigkeit
+      })); 
     } catch (e) {}
   };
 
@@ -231,11 +272,13 @@ export default function App() {
         if (parsed?.schichtTypen) setSchichtTypen(parsed.schichtTypen);
         if (parsed?.sollStunden !== undefined) setSollStunden(parsed.sollStunden);
         if (parsed?.sollNachtStunden !== undefined) setSollNachtStunden(parsed.sollNachtStunden);
+        if (parsed?.maxUrlaubstageAktuell !== undefined) setMaxUrlaubstageAktuell(parsed.maxUrlaubstageAktuell);
+        if (parsed?.maxUrlaubstageFolgejahr !== undefined) setMaxUrlaubstageFolgejahr(parsed.maxUrlaubstageFolgejahr);
+        if (parsed?.urlaubGueltigkeit !== undefined) setUrlaubGueltigkeit(parsed.urlaubGueltigkeit);
       }
     } catch (e) {}
   };
 
-  // Von Grund auf neu aufgebaute und stabilisierte Export-Funktion
   const handleExport = async () => {
     try {
       const exportPayload = { 
@@ -244,24 +287,27 @@ export default function App() {
         isDarkMode, 
         schichtTypen, 
         sollStunden, 
-        sollNachtStunden 
+        sollNachtStunden,
+        maxUrlaubstageAktuell,
+        maxUrlaubstageFolgejahr,
+        urlaubGueltigkeit
       };
       
       const dataString = JSON.stringify(exportPayload);
       
-      // Versuche das native Share-Menü aufzurufen
       const result = await Share.share({
         message: dataString,
         title: 'Schichtplaner Backup'
       });
       
-      // Unabhängig vom Ausgang des nativen Dialogs sichern wir den String zusätzlich in die Zwischenablage
       Clipboard.setString(dataString);
       Alert.alert("Sicherung kopiert", "Der Backup-Code wurde zusätzlich direkt in deine Zwischenablage kopiert!");
     } catch (e) {
-      // Fallback falls der native Share-Dialog auf manchen Android/iOS-Geräten blockiert wird
       try {
-        Clipboard.setString(JSON.stringify({ shifts, personNames, isDarkMode, schichtTypen, sollStunden, sollNachtStunden }));
+        Clipboard.setString(JSON.stringify({ 
+          shifts, personNames, isDarkMode, schichtTypen, sollStunden, sollNachtStunden,
+          maxUrlaubstageAktuell, maxUrlaubstageFolgejahr, urlaubGueltigkeit
+        }));
         Alert.alert("Export", "Backup-Code wurde direkt in die Zwischenablage kopiert (Teilen-Dialog nicht verfügbar).");
       } catch (err) {
         Alert.alert("Fehler", "Export konnte nicht durchgeführt werden.");
@@ -269,7 +315,6 @@ export default function App() {
     }
   };
 
-  // Von Grund auf neu aufgebaute und stabilisierte Import-Funktion
   const handleImport = async () => {
     const trimmedInput = backupInput ? backupInput.trim() : '';
     if (!trimmedInput) { 
@@ -280,31 +325,34 @@ export default function App() {
     try {
       const parsed = JSON.parse(trimmedInput);
       
-      // Validierung ob die Pflichtdatenstruktur existiert
       if (!parsed || !parsed.shifts || !Array.isArray(parsed.shifts)) {
         Alert.alert("Fehler", "Ungültiges Datenformat. Der Code enthält keine kompatiblen Schichtdaten.");
         return;
       }
       
-      // Zustand-Updates ausführen
       setShifts(parsed.shifts);
       if (parsed.personNames) setPersonNames(parsed.personNames);
       if (parsed.schichtTypen) setSchichtTypen(parsed.schichtTypen);
       if (parsed.isDarkMode !== undefined) setIsDarkMode(parsed.isDarkMode);
       if (parsed.sollStunden !== undefined) setSollStunden(parsed.sollStunden);
       if (parsed.sollNachtStunden !== undefined) setSollNachtStunden(parsed.sollNachtStunden);
+      if (parsed.maxUrlaubstageAktuell !== undefined) setMaxUrlaubstageAktuell(parsed.maxUrlaubstageAktuell);
+      if (parsed.maxUrlaubstageFolgejahr !== undefined) setMaxUrlaubstageFolgejahr(parsed.maxUrlaubstageFolgejahr);
+      if (parsed.urlaubGueltigkeit !== undefined) setUrlaubGueltigkeit(parsed.urlaubGueltigkeit);
       
       setRangeStartIdx(0);
       setRangeEndIdx(parsed.shifts.length - 1);
       
-      // Sofortige, direkte Speicherung im AsyncStorage zur absoluten Verlust-Vermeidung
       await AsyncStorage.setItem('@planer_nano_final_v5', JSON.stringify({
         shifts: parsed.shifts,
         personNames: parsed.personNames || personNames,
         isDarkMode: parsed.isDarkMode !== undefined ? parsed.isDarkMode : isDarkMode,
         schichtTypen: parsed.schichtTypen || schichtTypen,
         sollStunden: parsed.sollStunden !== undefined ? parsed.sollStunden : sollStunden,
-        sollNachtStunden: parsed.sollNachtStunden !== undefined ? parsed.sollNachtStunden : sollNachtStunden
+        sollNachtStunden: parsed.sollNachtStunden !== undefined ? parsed.sollNachtStunden : sollNachtStunden,
+        maxUrlaubstageAktuell: parsed.maxUrlaubstageAktuell !== undefined ? parsed.maxUrlaubstageAktuell : maxUrlaubstageAktuell,
+        maxUrlaubstageFolgejahr: parsed.maxUrlaubstageFolgejahr !== undefined ? parsed.maxUrlaubstageFolgejahr : maxUrlaubstageFolgejahr,
+        urlaubGueltigkeit: parsed.urlaubGueltigkeit !== undefined ? parsed.urlaubGueltigkeit : urlaubGueltigkeit
       }));
 
       setBackupInput('');
@@ -456,6 +504,14 @@ export default function App() {
       return;
     }
     const labelUpper = customLabel.trim().toUpperCase();
+
+    if (selectedCell.pk === 'p1' && labelUpper === 'URL') {
+      setModalVisible(false);
+      setPendingUrlaubCell({ rowId: selectedCell.rowId, label: 'URL', color: '#00bcd4' });
+      setUrlaubModalVisible(true);
+      return;
+    }
+
     setShifts(shifts.map(r => r.id === selectedCell.rowId ? {
       ...r, 
       [selectedCell.pk]: labelUpper, 
@@ -478,12 +534,18 @@ export default function App() {
   const handleCellPress = (rowId, pk, currentLabel, currentColor) => {
     if (copyModeActive) {
       if (!copiedValue) {
-        if (currentLabel === '--') {
+        if (currentLabel === '—') {
           Alert.alert("Hinweis", "Wähle eine besetzte Zelle aus, um deren Schicht als Muster zu kopieren.");
           return;
         }
         setCopiedValue({ label: currentLabel, color: currentColor });
       } else {
+        if (pk === 'p1' && copiedValue.label === 'URL') {
+          setPendingUrlaubCell({ rowId, label: 'URL', color: '#00bcd4' });
+          setUrlaubModalVisible(true);
+          return;
+        }
+
         setShifts(shifts.map(r => r.id === rowId ? {
           ...r,
           [pk]: copiedValue.label,
@@ -496,6 +558,21 @@ export default function App() {
       setEditingSchichtIdx(null); 
       setModalVisible(true);
     }
+  };
+
+  const handleSelectUrlaubGueltigkeit = (gueltigkeit) => {
+    if (!pendingUrlaubCell) return;
+    const { rowId, label, color } = pendingUrlaubCell;
+
+    setUrlaubGueltigkeit(prev => ({ ...prev, [rowId]: gueltigkeit }));
+    setShifts(shifts.map(r => r.id === rowId ? { ...r, p1: label, p1Col: color } : r));
+    
+    if (copyModeActive) {
+      setCopiedValue({ label: label, color: color });
+    }
+
+    setUrlaubModalVisible(false);
+    setPendingUrlaubCell(null);
   };
 
   const startEditSchichtTimes = (idx, schicht) => {
@@ -519,7 +596,7 @@ export default function App() {
 
   const openMyPlanEditModal = (day) => {
     setMyPlanSelectedDay(day);
-    setMyPlanEditLabel(day.customLabel_p1 !== null ? day.customLabel_p1 : (day.p1 !== '--' ? day.p1 : ''));
+    setMyPlanEditLabel(day.customLabel_p1 !== null ? day.customLabel_p1 : (day.p1 !== '—' ? day.p1 : ''));
     setMyPlanEditStart('');
     setMyPlanEditEnd('');
     setMyPlanEditPause('');
@@ -528,16 +605,32 @@ export default function App() {
 
   const saveMyPlanDayChanges = () => {
     if (!myPlanSelectedDay) return;
+    const labelUpper = myPlanEditLabel.trim().toUpperCase();
+
+    if (labelUpper === 'URL') {
+      setMyPlanModalVisible(false);
+      setPendingUrlaubCell({ rowId: myPlanSelectedDay.id, label: 'URL', color: '#00bcd4' });
+      setUrlaubModalVisible(true);
+      return;
+    }
+
     setShifts(shifts.map(s => {
       if (s.id === myPlanSelectedDay.id) {
-        const currentGlobal = schichtTypen.find(t => t.l === myPlanEditLabel.trim().toUpperCase());
+        const currentGlobal = schichtTypen.find(t => t.l === labelUpper);
+        
+        const targetColor = labelUpper === 'URL' 
+          ? '#00bcd4'
+          : (labelUpper ? (currentGlobal ? currentGlobal.c : customColor) : 'transparent');
+
         return {
           ...s,
+          p1: labelUpper || '—',
+          p1Col: targetColor,
           customLabel_p1: myPlanEditLabel.trim() || null,
           customStart_p1: myPlanEditStart.trim() || (currentGlobal ? currentGlobal.s : null),
           customEnd_p1: myPlanEditEnd.trim() || (currentGlobal ? currentGlobal.e : null),
           customPause_p1: myPlanEditPause.trim() || (currentGlobal ? currentGlobal.p : null),
-          customColor_p1: myPlanEditLabel.trim() ? (currentGlobal ? currentGlobal.c : s.customColor_p1 || '#e91e63') : null
+          customColor_p1: myPlanEditLabel.trim() ? targetColor : null
         };
       }
       return s;
@@ -548,10 +641,18 @@ export default function App() {
 
   const resetMyPlanDayChanges = () => {
     if (!myPlanSelectedDay) return;
+    if (urlaubGueltigkeit[myPlanSelectedDay.id]) {
+      const updatedGueltigkeit = { ...urlaubGueltigkeit };
+      delete updatedGueltigkeit[myPlanSelectedDay.id];
+      setUrlaubGueltigkeit(updatedGueltigkeit);
+    }
+
     setShifts(shifts.map(s => {
       if (s.id === myPlanSelectedDay.id) {
         return {
           ...s,
+          p1: '—',
+          p1Col: 'transparent',
           customLabel_p1: null,
           customStart_p1: null,
           customEnd_p1: null,
@@ -595,7 +696,7 @@ export default function App() {
       }
 
       const label = s.customLabel_p1 !== null ? s.customLabel_p1 : s.p1;
-      if (label === '--' || !label) return;
+      if (label === '—' || !label) return;
 
       if (!startStr || !endStr) return;
 
@@ -621,16 +722,19 @@ export default function App() {
         totalFeiertagMinutes += netMinutes;
       }
 
-      let nightStart1 = startMin;
-      let nightEnd1 = Math.min(endMin, 6 * 60);
-      let night1 = Math.max(0, nightEnd1 - nightStart1);
+      const night1Start = Math.max(startMin, 22 * 60);
+      const night1End = Math.min(endMin, 24 * 60);
+      let nightMinutes = Math.max(0, night1End - night1Start);
 
-      let nightStart2 = Math.max(startMin, 24 * 60);
-      let nightEnd2 = Math.min(endMin, 30 * 60); 
-      let night2 = Math.max(0, nightEnd2 - nightStart2);
+      const night2Start = Math.max(startMin, 24 * 60);
+      const night2End = Math.min(endMin, 30 * 60);
+      nightMinutes += Math.max(0, night2End - night2Start);
 
-      let dayNightMinutes = night1 + night2;
-      totalNightMinutes += dayNightMinutes;
+      const night3Start = startMin;
+      const night3End = Math.min(endMin, 6 * 60);
+      nightMinutes += Math.max(0, night3End - night3Start);
+
+      totalNightMinutes += nightMinutes;
     });
 
     const currentActualHours = totalMinutes / 60;
@@ -796,12 +900,22 @@ export default function App() {
               const isEdited = s.customLabel_p1 !== null || s.customStart_p1 !== null || s.customEnd_p1 !== null || s.customPause_p1 !== null;
               
               const isSick = s.p1Col === 'krank';
-              const label = isSick ? `✚ ${s.p1}` : (s.customLabel_p1 !== null ? s.customLabel_p1 : s.p1);
+              let label = isSick ? `✚ ${s.p1}` : (s.customLabel_p1 !== null ? s.customLabel_p1 : s.p1);
+              
+              if (!isSick && (label === 'URL' || s.p1 === 'URL')) {
+                label = urlaubNummerierung.mapping[s.id] || 'URL';
+              }
+
               const start = s.customStart_p1 !== null ? s.customStart_p1 : (globalSchicht ? globalSchicht.s : '--:--');
               const end = s.customEnd_p1 !== null ? s.customEnd_p1 : (globalSchicht ? globalSchicht.e : '--:--');
               const pause = s.customPause_p1 !== null ? s.customPause_p1 : (globalSchicht ? globalSchicht.p : '0');
               
-              const color = isSick ? '#e91e63' : (s.customColor_p1 !== null ? s.customColor_p1 : (s.p1Col !== 'transparent' ? s.p1Col : (globalSchicht ? globalSchicht.c : 'transparent')));
+              const color = isSick 
+                ? '#b71c1c' 
+                : (s.p1 === 'URL' || label.startsWith('URL') 
+                    ? '#00bcd4' 
+                    : (s.customColor_p1 !== null ? s.customColor_p1 : (s.p1Col !== 'transparent' ? s.p1Col : (globalSchicht ? globalSchicht.c : 'transparent'))));
+              
               const ft = isHessenFeiertag(s.datum);
 
               return (
@@ -817,9 +931,9 @@ export default function App() {
                   </View>
 
                   <View style={{ width: '40%', justifyContent: 'center', alignItems: 'center' }}>
-                    {label !== '--' ? (
+                    {label !== '—' ? (
                       <Text style={{ color: theme.txt, fontSize: 11, fontWeight: '500' }}>
-                        {start} - {end} <Text style={{ color: theme.sub, fontSize: 9 }}>({pause}m)</Text>
+                        {start} – {end} <Text style={{ color: theme.sub, fontSize: 9 }}>({pause}m)</Text>
                       </Text>
                     ) : (
                       <Text style={{ color: theme.sub, fontSize: 11 }}>Frei</Text>
@@ -846,6 +960,30 @@ export default function App() {
     });
     const moeglicheFeiertageAnzahl = wochentagFeiertage.length;
 
+    const parsedMaxAktuell = parseInt(maxUrlaubstageAktuell) || 0;
+    const parsedMaxFolgejahr = parseInt(maxUrlaubstageFolgejahr) || 0;
+
+    let abgezogeneTageAktuell = 0;
+    let abgezogeneTageFolgejahr = 0;
+
+    filteredShifts.forEach(s => {
+      const isUrlaub = s.p1 === 'URL' || (s.customLabel_p1 && s.customLabel_p1.trim().toUpperCase() === 'URL');
+      const isArbeitstag = s.tag !== 'Sa' && s.tag !== 'So';
+      const istFeiertag = isHessenFeiertag(s.datum) !== null;
+
+      if (isUrlaub && isArbeitstag && !istFeiertag) {
+        const gueltigkeit = urlaubGueltigkeit[s.id] || 'aktuell';
+        if (gueltigkeit === 'aktuell') {
+          abgezogeneTageAktuell++;
+        } else {
+          abgezogeneTageFolgejahr++;
+        }
+      }
+    });
+
+    const verbleibendAktuell = parsedMaxAktuell - abgezogeneTageAktuell;
+    const verbleibendFolgejahr = parsedMaxFolgejahr - abgezogeneTageFolgejahr;
+
     return (
       <View style={{flex: 1}}>
         <View style={[styles.rangeSelector, {backgroundColor: theme.card, borderBottomColor: theme.bor}]}>
@@ -862,8 +1000,40 @@ export default function App() {
 
         <ScrollView style={{flex: 1}} removeClippedSubviews={true} contentContainerStyle={{padding: 10, paddingBottom: 150}}>
           
-          {/* Krankheitsstatistik */}
-          <View style={styles.statHeader}><Ionicons name="medkit-outline" size={18} color="#e91e63" /><Text style={[styles.statTitle, {color: theme.txt}]}>Krankheitsstatistik (Tage)</Text></View>
+          <View style={styles.statHeader}><Ionicons name="airplane-outline" size={18} color="#00bcd4" /><Text style={[styles.statTitle, {color: theme.txt}]}>Urlaubsstatistik ({personNames.p1})</Text></View>
+          <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12, alignItems: 'center' }}>
+              <Text style={{ color: theme.txt, fontSize: 11, fontWeight: 'bold' }}>Max. Urlaub {2026} (manuell):</Text>
+              <TextInput 
+                style={[styles.modernSollInput, { color: theme.txt, backgroundColor: isDarkMode ? '#2c2c2c' : '#f5f5f5', width: 50, height: 24, fontSize: 12 }]}
+                keyboardType="numeric"
+                value={maxUrlaubstageAktuell}
+                onChangeText={setMaxUrlaubstageAktuell}
+              />
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15, alignItems: 'center' }}>
+              <Text style={{ color: theme.txt, fontSize: 11, fontWeight: 'bold' }}>Max. Urlaub {2027} (manuell):</Text>
+              <TextInput 
+                style={[styles.modernSollInput, { color: theme.txt, backgroundColor: isDarkMode ? '#2c2c2c' : '#f5f5f5', width: 50, height: 24, fontSize: 12 }]}
+                keyboardType="numeric"
+                value={maxUrlaubstageFolgejahr}
+                onChangeText={setMaxUrlaubstageFolgejahr}
+              />
+            </View>
+            <View style={[styles.devDivider, {backgroundColor: theme.bor}]} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 }}>
+              <View style={{ alignItems: 'center', flex: 0.5 }}>
+                <Text style={{ color: theme.sub, fontSize: 10 }}>Genommen (Aktuell / Folge)</Text>
+                <Text style={{ color: theme.txt, fontSize: 14, fontWeight: 'bold', marginTop: 4 }}>{abgezogeneTageAktuell} / {abgezogeneTageFolgejahr} Tage</Text>
+              </View>
+              <View style={{ alignItems: 'center', flex: 0.5 }}>
+                <Text style={{ color: theme.sub, fontSize: 10 }}>Verbleibend (Aktuell / Folge)</Text>
+                <Text style={{ color: verbleibendAktuell < 0 || verbleibendFolgejahr < 0 ? '#e91e63' : '#4caf50', fontSize: 14, fontWeight: 'bold', marginTop: 4 }}>{verbleibendAktuell} / {verbleibendFolgejahr} Tage</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.statHeader}><Ionicons name="medkit-outline" size={18} color="#b71c1c" /><Text style={[styles.statTitle, {color: theme.txt}]}>Krankheitsstatistik (Tage)</Text></View>
           <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
               <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 120}]}>NAME</Text>
@@ -877,7 +1047,49 @@ export default function App() {
                 <View key={pk} style={[styles.matrixRow, {borderBottomColor: theme.bor}]}>
                   <Text style={[styles.matrixName, {color: theme.txt, width: 120}]} numberOfLines={1}>{personNames[pk]}</Text>
                   <View style={{flexDirection: 'row', flex: 1, justifyContent: 'flex-end', paddingRight: 40}}>
-                    <Text style={{fontSize: 13, fontWeight: 'bold', color: sickDaysCount > 0 ? '#e91e63' : theme.sub}}>{sickDaysCount}</Text>
+                    <Text style={{fontSize: 13, fontWeight: 'bold', color: sickDaysCount > 0 ? '#b71c1c' : theme.sub}}>{sickDaysCount}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+
+          {/* NEU: Krankmeldungs-Verteilung nach Schichten (%) */}
+          <View style={styles.statHeader}><Ionicons name="analytics-outline" size={18} color="#b71c1c" /><Text style={[styles.statTitle, {color: theme.txt}]}>Krankmeldungs-Verteilung nach Schichten (%)</Text></View>
+          <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
+            <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
+              <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 55}]}>NAME</Text>
+              <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-between'}}>
+                {schichtTypen.map((t, i) => (
+                  <View key={i} style={{width: colWidth, justifyContent: 'center'}}>
+                    <View style={[styles.miniBox, {backgroundColor: t.c, width: 23}]}>
+                      <Text style={styles.miniBoxTxt}>{t.l}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+            {personKeys.map(pk => {
+              // Filtere alle Krankmeldungen der Person im Zeitraum (Ausschluss von Freitagen, Erlaubnis von Wochenenden)
+              const sickDays = filteredShifts.filter(s => s[pk + 'Col'] === 'krank' && s.tag !== 'Fr');
+              const totalSick = sickDays.length;
+
+              return (
+                <View key={pk} style={[styles.matrixRow, {borderBottomColor: theme.bor}]}>
+                  <Text style={[styles.matrixName, {color: theme.txt, width: 55}]} numberOfLines={1}>{personNames[pk]}</Text>
+                  <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-between'}}>
+                    {schichtTypen.map((t, i) => {
+                      // Prüfen, welche Schicht im regulären Datenbank-Kürzel-Feld hinterlegt war
+                      const count = sickDays.filter(s => s[pk] === t.l).length;
+                      const p = totalSick > 0 ? Math.round((count / totalSick) * 100) : 0;
+                      return (
+                        <View key={i} style={{width: colWidth, alignItems: 'center'}}>
+                          <Text style={[styles.matrixCellTxt, {color: p > 0 ? theme.txt : '#ccc'}]}>
+                            {p > 0 ? `${p}%` : '·'}
+                          </Text>
+                        </View>
+                      );
+                    })}
                   </View>
                 </View>
               );
@@ -885,7 +1097,7 @@ export default function App() {
           </View>
 
           <View style={styles.statHeader}><Ionicons name="calendar-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Feiertagsstatistik (Mo–Fr) (%)</Text></View>
-          <View style={[styles.matrixCard, {backgroundColor: theme.card}]}>
+          <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
               <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 80}]}>NAME</Text>
               <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around'}}>
@@ -894,7 +1106,7 @@ export default function App() {
               </View>
             </View>
             {personKeys.map(pk => {
-              const eingeteilteFeiertage = wochentagFeiertage.filter(s => s[pk] !== '--').length;
+              const eingeteilteFeiertage = wochentagFeiertage.filter(s => s[pk] !== '—').length;
               const prozent = moeglicheFeiertageAnzahl > 0 ? Math.round((100 / moeglicheFeiertageAnzahl) * eingeteilteFeiertage) : 0;
               
               return (
@@ -902,7 +1114,7 @@ export default function App() {
                   <Text style={[styles.matrixName, {color: theme.txt, width: 80}]} numberOfLines={1}>{personNames[pk]}</Text>
                   <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around'}}>
                     <Text style={{width: 60, textAlign: 'center', fontSize: 11, color: theme.txt}}>{eingeteilteFeiertage} / {moeglicheFeiertageAnzahl}</Text>
-                    <Text style={{width: 60, textAlign: 'center', fontSize: 11, fontWeight: 'bold', color: eingeteilteFeiertage > 0 ? theme.txt : '#ccc'}}>{moeglicheFeiertageAnzahl > 0 && eingeteilteFeiertage > 0 ? `${prozent}%` : moeglicheFeiertageAnzahl > 0 && eingeteilteFeiertage === 0 ? '0%' : '0%'}</Text>
+                    <Text style={{width: 60, textAlign: 'center', fontSize: 11, fontWeight: 'bold', color: eingeteilteFeiertage > 0 ? theme.txt : '#ccc'}}>{moeglicheFeiertageAnzahl > 0 && eingeteilteFeiertage > 0 ? `${prozent}%` : '0%'}</Text>
                   </View>
                 </View>
               );
@@ -910,7 +1122,7 @@ export default function App() {
           </View>
 
           <View style={styles.statHeader}><Ionicons name="pie-chart-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Gesamtverteilung (%)</Text></View>
-          <View style={[styles.matrixCard, {backgroundColor: theme.card}]}>
+          <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
               <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 55}]}>NAME</Text>
               <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-between'}}>
@@ -918,7 +1130,7 @@ export default function App() {
               </View>
             </View>
             {personKeys.map(pk => {
-              const total = filteredShifts.filter(s => s[pk] !== '--').length;
+              const total = filteredShifts.filter(s => s[pk] !== '—').length;
               return (
                 <View key={pk} style={[styles.matrixRow, {borderBottomColor: theme.bor}]}>
                   <Text style={[styles.matrixName, {color: theme.txt, width: 55}]} numberOfLines={1}>{personNames[pk]}</Text>
@@ -934,8 +1146,8 @@ export default function App() {
             })}
           </View>
 
-          <View style={[styles.statHeader, {marginTop: 20}]}><Ionicons name="log-in-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>1. Schicht nach "Frei" (%)</Text></View>
-          <View style={[styles.matrixCard, {backgroundColor: theme.card}]}>
+          <View style={[styles.statHeader, {marginTop: 0}]}><Ionicons name="log-in-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>1. Schicht nach „Frei“ (%)</Text></View>
+          <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
               <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 55}]}>NAME</Text>
               <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-between'}}>
@@ -946,7 +1158,7 @@ export default function App() {
               let afterFreeShifts = [];
               filteredShifts.forEach((s, idx) => {
                 const absIdx = rangeStartIdx + idx;
-                if (absIdx > 0 && shifts[absIdx - 1][pk] === '--' && s[pk] !== '--') afterFreeShifts.push(s[pk]);
+                if (absIdx > 0 && shifts[absIdx - 1][pk] === '—' && s[pk] !== '—') afterFreeShifts.push(s[pk]);
               });
               const totalAF = afterFreeShifts.length;
               return (
@@ -964,8 +1176,8 @@ export default function App() {
             })}
           </View>
 
-          <View style={[styles.statHeader, {marginTop: 20}]}><Ionicons name="people-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Partner-Duo SV/PDI (%)</Text></View>
-          <View style={[styles.matrixCard, {backgroundColor: theme.card, paddingHorizontal: 5}]}>
+          <View style={[styles.statHeader, {marginTop: 0}]}><Ionicons name="people-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Partner-Duo SV/PDI (%)</Text></View>
+          <View style={[styles.matrixCard, {backgroundColor: theme.card, paddingHorizontal: 5, marginBottom: 20}]}>
               <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
                   <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 45}]}>NAME</Text>
                   <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around'}}>
@@ -988,8 +1200,8 @@ export default function App() {
               ))}
           </View>
 
-          <View style={[styles.statHeader, {marginTop: 20}]}><Ionicons name="arrow-forward-circle-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Folge-Duo: SV nach PDI (%)</Text></View>
-          <View style={[styles.matrixCard, {backgroundColor: theme.card, paddingHorizontal: 5}]}>
+          <View style={[styles.statHeader, {marginTop: 0}]}><Ionicons name="arrow-forward-circle-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Folge-Duo: SV nach PDI (%)</Text></View>
+          <View style={[styles.matrixCard, {backgroundColor: theme.card, paddingHorizontal: 5, marginBottom: 20}]}>
               <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
                   <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 45}]}>SV von</Text>
                   <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around'}}>
@@ -1024,15 +1236,15 @@ export default function App() {
               })}
           </View>
 
-          <View style={[styles.statHeader, {marginTop: 20}]}><Ionicons name="calendar-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>SV am Wochenende (%)</Text></View>
-          <View style={[styles.matrixCard, {backgroundColor: theme.card}]}>
+          <View style={[styles.statHeader, {marginTop: 0}]}><Ionicons name="calendar-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>SV am Wochenende (%)</Text></View>
+          <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
               <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 80}]}>NAME</Text>
               <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around'}}><Text style={[styles.miniBoxTxt, {color: '#e91e63', fontWeight: 'bold'}]}>SAMSTAG</Text><Text style={[styles.miniBoxTxt, {color: '#e91e63', fontWeight: 'bold'}]}>SONNTAG</Text></View>
             </View>
             {personKeys.map(pk => {
-              const saS = filteredShifts.filter(s => s.tag === 'Sa' && s[pk] !== '--');
-              const soS = filteredShifts.filter(s => s.tag === 'So' && s[pk] !== '--');
+              const saS = filteredShifts.filter(s => s.tag === 'Sa' && s[pk] !== '—');
+              const soS = filteredShifts.filter(s => s.tag === 'So' && s[pk] !== '—');
               const saP = saS.length > 0 ? Math.round((saS.filter(s => s[pk] === 'SV').length / saS.length) * 100) : 0;
               const soP = soS.length > 0 ? Math.round((soS.filter(s => s[pk] === 'SV').length / soS.length) * 100) : 0;
               return (
@@ -1047,16 +1259,16 @@ export default function App() {
             })}
           </View>
 
-          <View style={[styles.statHeader, {marginTop: 20}]}><Ionicons name="cloud-upload-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Datensicherung</Text></View>
-          <View style={[styles.matrixCard, {backgroundColor: theme.card}]}>
-            <TextInput style={[styles.backupInput, {backgroundColor: isDarkMode ? '#121212' : '#f9f9f9', color: theme.txt, borderColor: theme.bor}]} multiline placeholder="Backup-Code hier einfügen..." placeholderTextColor="#888" value={backupInput} onChangeText={setBackupInput} />
+          <View style={[styles.statHeader, {marginTop: 0}]}><Ionicons name="cloud-upload-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Datensicherung</Text></View>
+          <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
+            <TextInput style={[styles.backupInput, {backgroundColor: isDarkMode ? '#121212' : '#f9f9f9', color: theme.txt, borderColor: theme.bor}]} multiline placeholder="Backup-Code hier einfügen…" placeholderTextColor="#888" value={backupInput} onChangeText={setBackupInput} />
             <View style={{flexDirection: 'row', justifyContent: 'space-between', marginTop: 15}}>
               <TouchableOpacity style={[styles.backupBtn, {backgroundColor: '#4caf50'}]} onPress={handleExport}><Text style={styles.btnTxt}>Senden (Export)</Text></TouchableOpacity>
               <TouchableOpacity style={[styles.backupBtn, {backgroundColor: theme.acc}]} onPress={handleImport}><Text style={styles.btnTxt}>Laden (Import)</Text></TouchableOpacity>
             </View>
           </View>
 
-          <View style={[styles.statHeader, {marginTop: 25}]}><Ionicons name="information-circle-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>App-Informationen</Text></View>
+          <View style={[styles.statHeader, {marginTop: 5}]}><Ionicons name="information-circle-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>App-Informationen</Text></View>
           <View style={[styles.matrixCard, styles.devCard, {backgroundColor: theme.card, borderColor: theme.bor}]}>
             <View style={styles.devRow}>
               <Ionicons name="code-working" size={16} color={theme.sub} style={{marginRight: 10}} />
@@ -1124,7 +1336,7 @@ export default function App() {
           </View>
 
           {copyModeActive && (
-            <View style={[styles.copyInfoBar, { backgroundColor: copiedValue ? (copiedValue.color === 'krank' ? '#e91e63' : copiedValue.color) : '#555' }]}>
+            <View style={[styles.copyInfoBar, { backgroundColor: copiedValue ? (copiedValue.color === 'krank' ? '#b71c1c' : copiedValue.color) : '#555' }]}>
               <Text style={styles.copyInfoBarTxt}>
                 {copiedValue 
                   ? `Muster [${copiedValue.label}] gewählt. Tippe Zellen zum Einfügen.` 
@@ -1137,7 +1349,7 @@ export default function App() {
             <View style={{width: 55, alignItems: 'center'}}><Text style={styles.headLabel}>TAG</Text></View>
             <ScrollView horizontal ref={headerScrollRef} scrollEnabled={false} showsHorizontalScrollIndicator={false}>
               {personKeys.map(k => (
-                <TouchableOpacity key={k} style={{width: 60, alignItems: 'center'}} onPress={() => { setSelectedPersonKey(k); setTempName(personNames[k]); setNameModalVisible(true); }}>
+                <TouchableOpacity key={k} style={{width: 60, justifyContent: 'center', alignItems: 'center'}} onPress={() => { setSelectedPersonKey(k); setTempName(personNames[k]); setNameModalVisible(true); }}>
                   <Text style={styles.headLabel} numberOfLines={1}>{personNames[k]}</Text>
                 </TouchableOpacity>
               ))}
@@ -1182,7 +1394,7 @@ export default function App() {
                 cancelsTouchesInView={false}
                 keyboardShouldPersistTaps="always"
                 removeClippedSubviews={true}
-                onScroll={(e) => headerScrollRef.current?.scrollTo({x: e.nativeEvent.contentOffset.x, animated: false})} 
+                onScroll={e => headerScrollRef.current?.scrollTo({x: e.nativeEvent.contentOffset.x, animated: false})} 
                 scrollEventThrottle={16}
               >
                 <View>
@@ -1194,15 +1406,24 @@ export default function App() {
                         <View style={{flexDirection: 'row'}}>
                           {personKeys.map(pk => {
                             const isSick = s[pk+'Col'] === 'krank';
-                            const cellBg = isSick ? '#e91e63' : s[pk+'Col'];
-                            const cellLabel = isSick ? `✚ ${s[pk]}` : s[pk];
+                            const isUrl = s[pk] === 'URL' || (pk === 'p1' && urlaubNummerierung.mapping[s.id]);
+                            
+                            const cellBg = isSick 
+                              ? '#b71c1c' 
+                              : (isUrl ? '#00bcd4' : s[pk+'Col']);
+                            
+                            let cellLabel = isSick ? `✚ ${s[pk]}` : s[pk];
+                            if (!isSick && pk === 'p1' && cellLabel === 'URL') {
+                              cellLabel = urlaubNummerierung.mapping[s.id] || 'URL';
+                            }
+
                             return (
                               <TouchableOpacity 
                                 key={pk} 
                                 delayPressIn={0}
                                 activeOpacity={0.5}
                                 style={[styles.cell, {backgroundColor: cellBg, borderBottomColor: theme.bor}]} 
-                                onPress={() => handleCellPress(s.id, pk, s[pk], s[pk+'Col'])}
+                                onPress={() => handleCellPress(s.id, pk, s[pk], cellBg)}
                               >
                                 <Text style={[styles.cellTxt, {color: cellBg === 'transparent' ? theme.txt : 'white'}]}>{cellLabel}</Text>
                               </TouchableOpacity>
@@ -1322,6 +1543,12 @@ export default function App() {
                       <TouchableOpacity 
                         style={[styles.opt, {backgroundColor: s.c, borderRadius: 12, width: '100%', margin: 0, paddingVertical: 4}]} 
                         onPress={() => { 
+                          if (selectedCell.pk === 'p1' && s.l === 'URL') {
+                            setModalVisible(false);
+                            setPendingUrlaubCell({ rowId: selectedCell.rowId, label: 'URL', color: '#00bcd4' });
+                            setUrlaubModalVisible(true);
+                            return;
+                          }
                           setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: s.l, [selectedCell.pk+'Col']: s.c} : r)); 
                           if (copyModeActive) { setCopiedValue({ label: s.l, color: s.c }); }
                           setModalVisible(false); 
@@ -1329,7 +1556,7 @@ export default function App() {
                       >
                         <Text style={{color: 'white', fontWeight: 'bold', fontSize: 10, textAlign: 'center'}} numberOfLines={1}>{s.l}</Text>
                         <Text style={{color: 'rgba(255,255,255,0.8)', fontSize: 7, marginTop: 1, textAlign: 'center'}} numberOfLines={1}>
-                          {s.s || '--'}-{s.e || '--'}
+                          {s.s || '—'}-{s.e || '—'}
                         </Text>
                       </TouchableOpacity>
                       
@@ -1341,10 +1568,30 @@ export default function App() {
                       </TouchableOpacity>
                     </View>
                   ))}
+
+                  <View style={styles.optContainer}>
+                    <TouchableOpacity 
+                      style={[styles.opt, {backgroundColor: '#00bcd4', borderRadius: 12, width: '100%', margin: 0, paddingVertical: 4, justifyContent: 'center', alignItems: 'center'}]} 
+                      onPress={() => { 
+                        if (selectedCell.pk === 'p1') {
+                          setModalVisible(false);
+                          setPendingUrlaubCell({ rowId: selectedCell.rowId, label: 'URL', color: '#00bcd4' });
+                          setUrlaubModalVisible(true);
+                        } else {
+                          setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: 'URL', [selectedCell.pk+'Col']: '#00bcd4'} : r));
+                          if (copyModeActive) { setCopiedValue({ label: 'URL', color: '#00bcd4' }); }
+                          setModalVisible(false);
+                        }
+                      }}
+                    >
+                      <Ionicons name="airplane-outline" size={12} color="white" />
+                      <Text style={{color: 'white', fontSize: 9, fontWeight: 'bold', marginTop: 1, textAlign: 'center'}} numberOfLines={1}>URLAUB</Text>
+                    </TouchableOpacity>
+                  </View>
                   
                   <View style={styles.optContainer}>
                     <TouchableOpacity 
-                      style={[styles.opt, {backgroundColor: '#e91e63', borderRadius: 12, width: '100%', margin: 0, paddingVertical: 4, justifyContent: 'center', alignItems: 'center'}]} 
+                      style={[styles.opt, {backgroundColor: '#b71c1c', borderRadius: 12, width: '100%', margin: 0, paddingVertical: 4, justifyContent: 'center', alignItems: 'center'}]} 
                       onPress={() => { 
                         setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk+'Col']: 'krank'} : r)); 
                         if (copyModeActive) { setCopiedValue({ label: 'KRANK', color: 'krank' }); }
@@ -1360,8 +1607,13 @@ export default function App() {
                     <TouchableOpacity 
                       style={[styles.opt, {backgroundColor: isDarkMode ? '#2c2c2c' : '#f0f0f0', borderRadius: 12, borderWidth: 1, borderColor: isDarkMode ? '#444' : '#ddd', width: '100%', margin: 0, paddingVertical: 4, justifyContent: 'center', alignItems: 'center'}]} 
                       onPress={() => { 
-                        setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: '--', [selectedCell.pk+'Col']: 'transparent'} : r)); 
-                        if (copyModeActive) { setCopiedValue({ label: '--', color: 'transparent' }); }
+                        if (selectedCell.pk === 'p1' && urlaubGueltigkeit[selectedCell.rowId]) {
+                          const updatedGueltigkeit = { ...urlaubGueltigkeit };
+                          delete updatedGueltigkeit[selectedCell.rowId];
+                          setUrlaubGueltigkeit(updatedGueltigkeit);
+                        }
+                        setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: '—', [selectedCell.pk+'Col']: 'transparent'} : r)); 
+                        if (copyModeActive) { setCopiedValue({ label: '—', color: 'transparent' }); }
                         setModalVisible(false); 
                       }}
                     >
@@ -1428,6 +1680,27 @@ export default function App() {
 
               <TouchableOpacity onPress={() => setModalVisible(false)} style={{marginTop: 20, marginBottom: 10}}><Text style={{color: theme.acc, textAlign: 'center', fontWeight: 'bold'}}>Schließen</Text></TouchableOpacity>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={urlaubModalVisible} transparent animationType="fade">
+        <View style={styles.modalBack}>
+          <View style={[styles.modalBox, {backgroundColor: theme.card}]}>
+            <Text style={{color: theme.txt, fontWeight: 'bold', marginBottom: 10, textAlign: 'center'}}>Urlaubsjahr festlegen</Text>
+            <Text style={{color: theme.sub, fontSize: 12, marginBottom: 20, textAlign: 'center'}}>Für welches Urlaubsjahr soll dieser Tag angerechnet werden?</Text>
+            
+            <TouchableOpacity style={[styles.saveBtn, {backgroundColor: theme.acc, marginBottom: 10}]} onPress={() => handleSelectUrlaubGueltigkeit('aktuell')}>
+              <Text style={{color: 'white', fontWeight: 'bold'}}>Aktuelles Jahr ({2026})</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={[styles.saveBtn, {backgroundColor: '#4caf50', marginBottom: 15}]} onPress={() => handleSelectUrlaubGueltigkeit('folgejahr')}>
+              <Text style={{color: 'white', fontWeight: 'bold'}}>Folgejahr ({2027})</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.saveBtn, {backgroundColor: '#9e9e9e'}]} onPress={() => { setUrlaubModalVisible(false); setPendingUrlaubCell(null); }}>
+              <Text style={{color: 'white', fontWeight: 'bold'}}>Abbrechen</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1527,7 +1800,7 @@ const styles = StyleSheet.create({
   cellTxt: { fontSize: 12, fontWeight: '600' },
   tabBar: { flexDirection: 'row', height: 85, borderTopWidth: 1, paddingBottom: 25, paddingHorizontal: 20, position: 'absolute', bottom: 0, left: 0, right: 0 },
   tab: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  statHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingLeft: 5 },
+  statHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingLeft: 5, marginTop: 15 },
   statTitle: { fontSize: 14, fontWeight: 'bold', marginLeft: 8 },
   matrixCard: { borderRadius: 18, padding: 12, elevation: 3, marginBottom: 10 },
   matrixHeader: { flexDirection: 'row', borderBottomWidth: 1, paddingBottom: 8, marginBottom: 5 },
