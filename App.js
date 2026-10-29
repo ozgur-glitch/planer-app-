@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Modal, TextInput, StatusBar, SafeAreaView, Alert } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Modal, TextInput, StatusBar, SafeAreaView, Alert, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
@@ -175,7 +175,7 @@ export default function App() {
 
   const saveData = async () => {
     try { 
-      await AsyncStorage.setItem('@planer_nano_final_v63', JSON.stringify({
+      await AsyncStorage.setItem('@planer_nano_final_v65', JSON.stringify({
         shifts, personNames, isDarkMode, schichtTypen
       })); 
     } catch (e) {}
@@ -183,7 +183,7 @@ export default function App() {
 
   const loadData = async () => {
     try {
-      const saved = await AsyncStorage.getItem('@planer_nano_final_v63');
+      const saved = await AsyncStorage.getItem('@planer_nano_final_v65');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed?.shifts && parsed.shifts.length > 0) { 
@@ -197,17 +197,37 @@ export default function App() {
     } catch (e) {}
   };
 
-  // ECHTER DIREKTER DATEI-EXPORT IM DOKUMENTENVERZEICHNIS
+  // DIREKTER ORDNER-AUSWAHL EXPORT (STORAGE ACCESS FRAMEWORK)
   const handleExportJsonFile = async () => {
     try {
       const exportPayload = { shifts, personNames, isDarkMode, schichtTypen };
+      const jsonString = JSON.stringify(exportPayload, null, 2);
       const fileName = `schichtplaner_backup_${new Date().toISOString().slice(0, 10)}.json`;
-      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
 
-      await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(exportPayload));
-      Alert.alert("Erfolg!", `Backup wurde direkt im App-Ordner gespeichert:\n\n${fileName}`);
+      if (Platform.OS === 'android' && FileSystem && FileSystem.StorageAccessFramework) {
+        const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+        if (permissions.granted) {
+          const uri = await FileSystem.StorageAccessFramework.createFileAsync(
+            permissions.directoryUri,
+            fileName,
+            'application/json'
+          );
+          await FileSystem.writeAsStringAsync(uri, jsonString, {
+            encoding: FileSystem.EncodingType.UTF8,
+          });
+          Alert.alert('Erfolg', 'Backup wurde im gewählten Ordner gespeichert!');
+        }
+      } else if (FileSystem && FileSystem.documentDirectory) {
+        const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+        await FileSystem.writeAsStringAsync(fileUri, jsonString, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+        Alert.alert('Erfolg', `Gespeichert unter:\n${fileUri}`);
+      } else {
+        Alert.alert('Fehler', 'Export wird auf diesem Gerät nicht unterstützt.');
+      }
     } catch (e) {
-      Alert.alert("Fehler", "Export der JSON-Datei ist fehlgeschlagen.");
+      Alert.alert('Fehler', 'Export der JSON-Datei ist fehlgeschlagen: ' + e.message);
     }
   };
 
@@ -697,11 +717,11 @@ export default function App() {
             })}
           </View>
 
-          {/* DATENSICHERUNG ÜBER JSON DATEI */}
+          {/* DATENSICHERUNG PER ORDNER-AUSWAHL */}
           <View style={[styles.statHeader, {marginTop: 0}]}><Ionicons name="cloud-upload-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Datensicherung (JSON-Datei)</Text></View>
           <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
             <Text style={{color: theme.sub, fontSize: 11, marginBottom: 15, textAlign: 'center'}}>
-              Speichere dein Backup lokal ab oder wähle eine vorhandene Datei zum Wiederherstellen aus.
+              Wähle einen Ordner auf deinem Smartphone zum Speichern oder lade ein Backup hoch.
             </Text>
             <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
               <TouchableOpacity style={[styles.backupBtn, {backgroundColor: '#4caf50'}]} onPress={handleExportJsonFile}>
@@ -1235,7 +1255,7 @@ const styles = StyleSheet.create({
   paletteCircle: { width: 32, height: 32, borderRadius: 16 },
   divider: { height: 1, width: '100%', marginVertical: 12 },
   searchFilterContainer: { flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center', borderBottomWidth: 1, flexWrap: 'nowrap' },
-  searchBarButton: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingVertical: 5, paddingHorizontal: 8, borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.04)', marginRight: 6 },
+  searchBarButton: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingVertical: '5%', paddingHorizontal: 8, borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.04)', marginRight: 6 },
   searchText: { fontSize: 11, fontWeight: '500' },
   clearFilterBtn: { paddingRight: 6, justifyContent: 'center', alignItems: 'center' },
   devCard: { borderWidth: 1, paddingVertical: 15, paddingHorizontal: 18, marginBottom: 30 },
