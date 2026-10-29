@@ -3,7 +3,6 @@ import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Modal, TextInput,
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 
 // Dynamische Hilfsfunktion zur Generierung von Jahren
@@ -176,7 +175,7 @@ export default function App() {
 
   const saveData = async () => {
     try { 
-      await AsyncStorage.setItem('@planer_nano_final_v62', JSON.stringify({
+      await AsyncStorage.setItem('@planer_nano_final_v63', JSON.stringify({
         shifts, personNames, isDarkMode, schichtTypen
       })); 
     } catch (e) {}
@@ -184,7 +183,7 @@ export default function App() {
 
   const loadData = async () => {
     try {
-      const saved = await AsyncStorage.getItem('@planer_nano_final_v62');
+      const saved = await AsyncStorage.getItem('@planer_nano_final_v63');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed?.shifts && parsed.shifts.length > 0) { 
@@ -198,7 +197,7 @@ export default function App() {
     } catch (e) {}
   };
 
-  // JSON-Dateiexport über das Dateisystem und den Share-Dialog
+  // ECHTER DIREKTER DATEI-EXPORT IM DOKUMENTENVERZEICHNIS
   const handleExportJsonFile = async () => {
     try {
       const exportPayload = { shifts, personNames, isDarkMode, schichtTypen };
@@ -206,22 +205,13 @@ export default function App() {
       const fileUri = `${FileSystem.documentDirectory}${fileName}`;
 
       await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(exportPayload));
-
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri, {
-          mimeType: 'application/json',
-          dialogTitle: 'Schichtplaner Backup speichern',
-          UTI: 'public.json'
-        });
-      } else {
-        Alert.alert("Fehler", "Teilen/Speichern von Dateien wird auf diesem Gerät nicht unterstützt.");
-      }
+      Alert.alert("Erfolg!", `Backup wurde direkt im App-Ordner gespeichert:\n\n${fileName}`);
     } catch (e) {
       Alert.alert("Fehler", "Export der JSON-Datei ist fehlgeschlagen.");
     }
   };
 
-  // JSON-Dateienimport über den DocumentPicker
+  // JSON-DATEI IMPORT
   const handleImportJsonFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -707,11 +697,11 @@ export default function App() {
             })}
           </View>
 
-          {/* DATENSICHERUNG PER JSON-DATEI */}
+          {/* DATENSICHERUNG ÜBER JSON DATEI */}
           <View style={[styles.statHeader, {marginTop: 0}]}><Ionicons name="cloud-upload-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Datensicherung (JSON-Datei)</Text></View>
           <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
             <Text style={{color: theme.sub, fontSize: 11, marginBottom: 15, textAlign: 'center'}}>
-              Exportiere deine Daten als `.json`-Datei oder importiere ein bestehendes Backup direkt vom Smartphone.
+              Speichere dein Backup lokal ab oder wähle eine vorhandene Datei zum Wiederherstellen aus.
             </Text>
             <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
               <TouchableOpacity style={[styles.backupBtn, {backgroundColor: '#4caf50'}]} onPress={handleExportJsonFile}>
