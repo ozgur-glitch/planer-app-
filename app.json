@@ -1,7 +1,8 @@
 {
   "expo": {
     "name": "Schichtplaner",
-    "slug": "planer-app",
+    "slug": "schichtplaner",
+    "owner": "ceozs-team",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./icon.png", 
@@ -23,7 +24,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "4375490d-48be-491f-84d7-068be4478ad3"
+        "projectId": "e54d0f75-dd8f-4989-a26b-85f5a1ca66b1"
       }
     }
   }
