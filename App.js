@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Modal, TextInput, StatusBar, SafeAreaView, Alert, Share, Clipboard } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Modal, TextInput, StatusBar, SafeAreaView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
 
 // Dynamische Hilfsfunktion zur Generierung von Jahren
-const generateDynamicYears = (personKeys, startYear = 2024, endYear = 2028) => {
+const generateDynamicYears = (personKeys, startYear = 2020, endYear = 2030) => {
   const yearData = [];
   const startDate = new Date(startYear, 0, 1);
   const endDate = new Date(endYear, 11, 31);
@@ -37,7 +40,6 @@ export default function App() {
   const [selectedCell, setSelectedCell] = useState(null);
   const [selectedPersonKey, setSelectedPersonKey] = useState(null);
   const [tempName, setTempName] = useState('');
-  const [backupInput, setBackupInput] = useState('');
 
   const [rangeStartIdx, setRangeStartIdx] = useState(0);
   const [rangeEndIdx, setRangeEndIdx] = useState(0);
@@ -174,7 +176,7 @@ export default function App() {
 
   const saveData = async () => {
     try { 
-      await AsyncStorage.setItem('@planer_nano_final_v59', JSON.stringify({
+      await AsyncStorage.setItem('@planer_nano_final_v62', JSON.stringify({
         shifts, personNames, isDarkMode, schichtTypen
       })); 
     } catch (e) {}
@@ -182,7 +184,7 @@ export default function App() {
 
   const loadData = async () => {
     try {
-      const saved = await AsyncStorage.getItem('@planer_nano_final_v59');
+      const saved = await AsyncStorage.getItem('@planer_nano_final_v62');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed?.shifts && parsed.shifts.length > 0) { 
@@ -196,46 +198,58 @@ export default function App() {
     } catch (e) {}
   };
 
-  const handleExport = async () => {
+  // JSON-Dateiexport über das Dateisystem und den Share-Dialog
+  const handleExportJsonFile = async () => {
     try {
       const exportPayload = { shifts, personNames, isDarkMode, schichtTypen };
-      const dataString = JSON.stringify(exportPayload);
-      await Share.share({ message: dataString, title: 'Schichtplaner Backup' });
-      Clipboard.setString(dataString);
-      Alert.alert("Sicherung kopiert", "Der Backup-Code wurde zusätzlich direkt in deine Zwischenablage kopiert!");
-    } catch (e) {
-      try {
-        Clipboard.setString(JSON.stringify({ shifts, personNames, isDarkMode, schichtTypen }));
-        Alert.alert("Export", "Backup-Code wurde direkt in die Zwischenablage kopiert.");
-      } catch (err) {
-        Alert.alert("Fehler", "Export konnte nicht durchgeführt werden.");
+      const fileName = `schichtplaner_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+
+      await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(exportPayload));
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/json',
+          dialogTitle: 'Schichtplaner Backup speichern',
+          UTI: 'public.json'
+        });
+      } else {
+        Alert.alert("Fehler", "Teilen/Speichern von Dateien wird auf diesem Gerät nicht unterstützt.");
       }
+    } catch (e) {
+      Alert.alert("Fehler", "Export der JSON-Datei ist fehlgeschlagen.");
     }
   };
 
-  const handleImport = async () => {
-    const trimmedInput = backupInput ? backupInput.trim() : '';
-    if (!trimmedInput) { 
-      Alert.alert("Hinweis", "Bitte füge zuerst einen gültigen Backup-Code in das Textfeld ein."); 
-      return; 
-    }
+  // JSON-Dateienimport über den DocumentPicker
+  const handleImportJsonFile = async () => {
     try {
-      const parsed = JSON.parse(trimmedInput);
-      if (!parsed || !parsed.shifts || !Array.isArray(parsed.shifts)) {
-        Alert.alert("Fehler", "Ungültiges Datenformat.");
-        return;
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/json', '*/*'],
+        copyToCacheDirectory: true
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const fileUri = result.assets[0].uri;
+        const fileContent = await FileSystem.readAsStringAsync(fileUri);
+        
+        const parsed = JSON.parse(fileContent);
+        if (!parsed || !parsed.shifts || !Array.isArray(parsed.shifts)) {
+          Alert.alert("Fehler", "Die ausgewählte Datei hat ein ungültiges Format.");
+          return;
+        }
+
+        setShifts(parsed.shifts);
+        if (parsed.personNames) setPersonNames(parsed.personNames);
+        if (parsed.schichtTypen) setSchichtTypen(parsed.schichtTypen);
+        if (parsed.isDarkMode !== undefined) setIsDarkMode(parsed.isDarkMode);
+        
+        setRangeStartIdx(0);
+        setRangeEndIdx(parsed.shifts.length - 1);
+        Alert.alert("Erfolg", "Backup erfolgreich aus JSON-Datei importiert!");
       }
-      setShifts(parsed.shifts);
-      if (parsed.personNames) setPersonNames(parsed.personNames);
-      if (parsed.schichtTypen) setSchichtTypen(parsed.schichtTypen);
-      if (parsed.isDarkMode !== undefined) setIsDarkMode(parsed.isDarkMode);
-      
-      setRangeStartIdx(0);
-      setRangeEndIdx(parsed.shifts.length - 1);
-      setBackupInput('');
-      Alert.alert("Erfolg", "Backup erfolgreich importiert und permanent gespeichert!");
-    } catch (e) { 
-      Alert.alert("Fehler beim Import", "Der eingegebene Code ist fehlerhaft oder unvollständig."); 
+    } catch (e) {
+      Alert.alert("Fehler beim Import", "Die Datei konnte nicht gelesen oder verarbeitet werden.");
     }
   };
 
@@ -415,7 +429,6 @@ export default function App() {
   const theme = isDarkMode ? { bg: '#121212', head: '#1976d2', txt: '#eee', card: '#1e1e1e', acc: '#64b5f6', bor: '#333', sub: '#aaa' } 
                            : { bg: '#f8f9fa', head: '#1976d2', txt: '#222', card: 'white', acc: '#1976d2', bor: '#eee', sub: '#666' };
 
-  // Berechnung für den Statistik-Zeitraum (berücksichtigt die oberen VON / BIS Picker im Tab Statistik)
   const statisticsShifts = useMemo(() => {
     return shifts.slice(rangeStartIdx, rangeEndIdx + 1);
   }, [shifts, rangeStartIdx, rangeEndIdx]);
@@ -510,8 +523,6 @@ export default function App() {
 
   const renderStatistik = () => {
     const colWidth = 26;
-    
-    // KORREKTE FEIERTAGS-ERFASSUNG: Nur Tage im Statistik-Zeitraum filtern, die ein Hessen-Feiertag SIND und NICHT auf Sonntag fallen
     const feiertageOhneSonntag = statisticsShifts.filter(s => {
       const isHoliday = isHessenFeiertag(s.datum) !== null;
       const isNotSunday = s.tag !== 'So';
@@ -696,12 +707,21 @@ export default function App() {
             })}
           </View>
 
-          <View style={[styles.statHeader, {marginTop: 0}]}><Ionicons name="cloud-upload-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Datensicherung</Text></View>
+          {/* DATENSICHERUNG PER JSON-DATEI */}
+          <View style={[styles.statHeader, {marginTop: 0}]}><Ionicons name="cloud-upload-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Datensicherung (JSON-Datei)</Text></View>
           <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
-            <TextInput style={[styles.backupInput, {backgroundColor: isDarkMode ? '#121212' : '#f9f9f9', color: theme.txt, borderColor: theme.bor}]} multiline placeholder="Backup-Code hier einfügen…" placeholderTextColor="#888" value={backupInput} onChangeText={setBackupInput} />
-            <View style={{flexDirection: 'row', justifyContent: 'space-between', marginTop: 15}}>
-              <TouchableOpacity style={[styles.backupBtn, {backgroundColor: '#4caf50'}]} onPress={handleExport}><Text style={styles.btnTxt}>Senden (Export)</Text></TouchableOpacity>
-              <TouchableOpacity style={[styles.backupBtn, {backgroundColor: theme.acc}]} onPress={handleImport}><Text style={styles.btnTxt}>Laden (Import)</Text></TouchableOpacity>
+            <Text style={{color: theme.sub, fontSize: 11, marginBottom: 15, textAlign: 'center'}}>
+              Exportiere deine Daten als `.json`-Datei oder importiere ein bestehendes Backup direkt vom Smartphone.
+            </Text>
+            <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+              <TouchableOpacity style={[styles.backupBtn, {backgroundColor: '#4caf50'}]} onPress={handleExportJsonFile}>
+                <Ionicons name="download-outline" size={16} color="white" style={{marginBottom: 4}} />
+                <Text style={styles.btnTxt}>Exportieren</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.backupBtn, {backgroundColor: theme.acc}]} onPress={handleImportJsonFile}>
+                <Ionicons name="folder-open-outline" size={16} color="white" style={{marginBottom: 4}} />
+                <Text style={styles.btnTxt}>Importieren</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -1216,7 +1236,6 @@ const styles = StyleSheet.create({
   input: { borderBottomWidth: 2, fontSize: 22, textAlign: 'center', marginBottom: 15 },
   saveBtn: { paddingVertical: 12, paddingHorizontal: 10, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   modalButtonRowHorizontal: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', flexWrap: 'nowrap' },
-  backupInput: { height: 80, borderWidth: 1, borderRadius: 12, padding: 10, fontSize: 10, textAlignVertical: 'top' },
   backupBtn: { padding: 12, borderRadius: 10, flex: 0.48, alignItems: 'center' },
   btnTxt: { color: 'white', fontWeight: 'bold', fontSize: 11 },
   customShiftContainer: { flexDirection: 'row', borderWidth: 1, borderRadius: 10, overflow: 'hidden', marginBottom: 10 },
