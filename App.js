@@ -45,8 +45,13 @@ export default function App() {
   const [selectingType, setSelectingType] = useState('start'); 
   const [manualDateText, setManualDateText] = useState('');
 
+  // Zeitraum-Filter per TTMMJJJJ Eingabe
   const [searchModalVisible, setSearchModalVisible] = useState(false);
-  const [selectedMonthFilter, setSelectedMonthFilter] = useState('');
+  const [filterStartRaw, setFilterStartRaw] = useState('');
+  const [filterEndRaw, setFilterEndRaw] = useState('');
+  const [activeFilterRange, setActiveFilterRange] = useState(null);
+
+  const filterEndInputRef = useRef(null);
 
   const [customLabel, setCustomLabel] = useState('');
   const [customColor, setCustomColor] = useState('#D81B60');
@@ -85,7 +90,6 @@ export default function App() {
   const editEndRef = useRef(null);
   const editPauseRef = useRef(null);
 
-  // Scroll-Referenzen für perfekte und synchrone Steuerung
   const verticalScrollRef = useRef(null);
   const dateScrollRef = useRef(null);
   const horizontalHeaderRef = useRef(null);
@@ -152,7 +156,7 @@ export default function App() {
     return feiertage[datumStr] ? feiertage[datumStr].name : null;
   };
 
-  const [shifts, setShifts] = useState(() => generateDynamicYears(Object.keys(initialNames), 2024, 2028));
+  const [shifts, setShifts] = useState(() => generateDynamicYears(Object.keys(initialNames), 2020, 2030));
 
   useEffect(() => { loadData(); }, []);
   
@@ -166,11 +170,11 @@ export default function App() {
       const timer = setTimeout(() => { jumpToCurrentDay(); }, 50);
       return () => clearTimeout(timer);
     }
-  }, [activeTab, selectedMonthFilter]);
+  }, [activeTab, activeFilterRange]);
 
   const saveData = async () => {
     try { 
-      await AsyncStorage.setItem('@planer_nano_final_v55', JSON.stringify({
+      await AsyncStorage.setItem('@planer_nano_final_v59', JSON.stringify({
         shifts, personNames, isDarkMode, schichtTypen
       })); 
     } catch (e) {}
@@ -178,7 +182,7 @@ export default function App() {
 
   const loadData = async () => {
     try {
-      const saved = await AsyncStorage.getItem('@planer_nano_final_v55');
+      const saved = await AsyncStorage.getItem('@planer_nano_final_v59');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed?.shifts && parsed.shifts.length > 0) { 
@@ -260,10 +264,67 @@ export default function App() {
     }
   };
 
+  const parseRawToDate = (rawStr) => {
+    if (rawStr.length !== 8) return null;
+    const day = parseInt(rawStr.substring(0, 2), 10);
+    const month = parseInt(rawStr.substring(2, 4), 10) - 1;
+    const year = parseInt(rawStr.substring(4, 8), 10);
+    return new Date(year, month, day);
+  };
+
+  const formatRawToDisplay = (rawStr) => {
+    const cleaned = rawStr.replace(/[^0-9]/g, '');
+    if (cleaned.length <= 2) return cleaned;
+    if (cleaned.length <= 4) return `${cleaned.substring(0, 2)}.${cleaned.substring(2)}`;
+    return `${cleaned.substring(0, 2)}.${cleaned.substring(2, 4)}.${cleaned.substring(4, 8)}`;
+  };
+
+  const handleStartRawChange = (text, nextRef) => {
+    const cleaned = text.replace(/[^0-9]/g, '').substring(0, 8);
+    setFilterStartRaw(cleaned);
+    if (cleaned.length === 8 && nextRef && nextRef.current) {
+      nextRef.current.focus();
+    }
+  };
+
+  const handleEndRawChange = (text) => {
+    const cleaned = text.replace(/[^0-9]/g, '').substring(0, 8);
+    setFilterEndRaw(cleaned);
+    if (cleaned.length === 8) {
+      setTimeout(() => {
+        executeFilter(filterStartRaw, cleaned);
+      }, 100);
+    }
+  };
+
+  const executeFilter = (startRaw, endRaw) => {
+    if (startRaw.length !== 8 || endRaw.length !== 8) {
+      Alert.alert("Fehler", "Bitte gib jeweils 8 Zahlen im Format TTMMJJJJ ein.");
+      return;
+    }
+    const dStart = parseRawToDate(startRaw);
+    const dEnd = parseRawToDate(endRaw);
+
+    if (!dStart || !dEnd || isNaN(dStart.getTime()) || isNaN(dEnd.getTime())) {
+      Alert.alert("Fehler", "Ungültiges Datum eingegeben.");
+      return;
+    }
+    if (dStart > dEnd) {
+      Alert.alert("Fehler", "Das Startdatum muss vor dem Enddatum liegen.");
+      return;
+    }
+
+    const startDisplay = formatRawToDisplay(startRaw);
+    const endDisplay = formatRawToDisplay(endRaw);
+
+    setActiveFilterRange({ start: startDisplay, end: endDisplay });
+    setSearchModalVisible(false);
+  };
+
   const jumpToCurrentDay = () => {
     let targetIdx = -1;
-    if (selectedMonthFilter) {
-      targetIdx = currentMonthShifts.findIndex(s => s.datum.endsWith(selectedMonthFilter));
+    if (activeFilterRange) {
+      targetIdx = 0;
     } else {
       const today = new Date();
       const tag = String(today.getDate()).padStart(2, '0');
@@ -312,8 +373,8 @@ export default function App() {
         const targetYearNum = parseInt(jahr);
         const firstShift = shifts[0];
         const lastShift = shifts[shifts.length - 1];
-        const firstYearNum = firstShift ? parseInt(firstShift.datum.split('.')[2]) : 2024;
-        const lastYearNum = lastShift ? parseInt(lastShift.datum.split('.')[2]) : 2028;
+        const firstYearNum = firstShift ? parseInt(firstShift.datum.split('.')[2]) : 2020;
+        const lastYearNum = lastShift ? parseInt(lastShift.datum.split('.')[2]) : 2030;
 
         if (targetYearNum < firstYearNum && targetYearNum >= 2020) {
           const pastDays = generateDynamicYears(personKeys, targetYearNum, firstYearNum - 1);
@@ -354,40 +415,36 @@ export default function App() {
   const theme = isDarkMode ? { bg: '#121212', head: '#1976d2', txt: '#eee', card: '#1e1e1e', acc: '#64b5f6', bor: '#333', sub: '#aaa' } 
                            : { bg: '#f8f9fa', head: '#1976d2', txt: '#222', card: 'white', acc: '#1976d2', bor: '#eee', sub: '#666' };
 
-  const filteredShifts = useMemo(() => {
+  // Berechnung für den Statistik-Zeitraum (berücksichtigt die oberen VON / BIS Picker im Tab Statistik)
+  const statisticsShifts = useMemo(() => {
     return shifts.slice(rangeStartIdx, rangeEndIdx + 1);
   }, [shifts, rangeStartIdx, rangeEndIdx]);
 
-  const availableMonths = useMemo(() => {
-    const monthsSet = new Set();
-    shifts.forEach(s => {
-      const parts = s.datum.split('.');
-      if (parts.length === 3) {
-        monthsSet.add(`${parts[1]}.${parts[2]}`);
-      }
-    });
-    return Array.from(monthsSet).sort((a, b) => {
-      const [mA, yA] = a.split('.').map(Number);
-      const [mB, yB] = b.split('.').map(Number);
-      return yB !== yA ? yB - yA : mB - mA; 
-    });
-  }, [shifts]);
-
   const currentMonthShifts = useMemo(() => {
-    let targetMMYYYY = selectedMonthFilter;
-    if (!targetMMYYYY) {
-      const today = new Date();
-      targetMMYYYY = `${String(today.getMonth() + 1).padStart(2, '0')}.${today.getFullYear()}`;
+    if (activeFilterRange) {
+      const dStart = parseRawToDate(filterStartRaw);
+      const dEnd = parseRawToDate(filterEndRaw);
+      if (dStart && dEnd) {
+        const filtered = shifts.filter(s => {
+          const parts = s.datum.split('.');
+          const dCurrent = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+          return dCurrent && dCurrent >= dStart && dCurrent <= dEnd;
+        });
+        return filtered.length > 0 ? filtered : shifts;
+      }
     }
+    const today = new Date();
+    const targetMMYYYY = `${String(today.getMonth() + 1).padStart(2, '0')}.${today.getFullYear()}`;
     const elements = shifts.filter(s => s.datum.endsWith(targetMMYYYY));
     return elements.length > 0 ? elements : shifts;
-  }, [shifts, selectedMonthFilter]);
+  }, [shifts, activeFilterRange, filterStartRaw, filterEndRaw]);
 
   const filterDisplayTitle = useMemo(() => {
-    if (!selectedMonthFilter) return "Aktueller Monat";
-    const [m, y] = selectedMonthFilter.split('.');
-    return `${monate[parseInt(m) - 1]} ${y}`;
-  }, [selectedMonthFilter]);
+    if (activeFilterRange) {
+      return `${activeFilterRange.start} - ${activeFilterRange.end}`;
+    }
+    return "Aktueller Monat";
+  }, [activeFilterRange]);
 
   const applyCustomShift = () => {
     if (!customLabel.trim()) {
@@ -453,10 +510,14 @@ export default function App() {
 
   const renderStatistik = () => {
     const colWidth = 26;
-    const wochentagFeiertage = filteredShifts.filter(s => {
-      return s.tag !== 'Sa' && s.tag !== 'So' && isHessenFeiertag(s.datum) !== null;
+    
+    // KORREKTE FEIERTAGS-ERFASSUNG: Nur Tage im Statistik-Zeitraum filtern, die ein Hessen-Feiertag SIND und NICHT auf Sonntag fallen
+    const feiertageOhneSonntag = statisticsShifts.filter(s => {
+      const isHoliday = isHessenFeiertag(s.datum) !== null;
+      const isNotSunday = s.tag !== 'So';
+      return isHoliday && isNotSunday;
     });
-    const moeglicheFeiertageAnzahl = wochentagFeiertage.length;
+    const moeglicheFeiertageAnzahl = feiertageOhneSonntag.length;
 
     return (
       <View style={{flex: 1}}>
@@ -473,7 +534,7 @@ export default function App() {
         </View>
 
         <ScrollView style={{flex: 1}} removeClippedSubviews={true} contentContainerStyle={{padding: 10, paddingBottom: 220}}>
-          <View style={styles.calendarHeader}><Ionicons name="calendar-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Feiertagsstatistik (Mo–Fr) (%)</Text></View>
+          <View style={styles.calendarHeader}><Ionicons name="calendar-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Feiertagsstatistik (Mo–Sa) (%)</Text></View>
           <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
               <Text style={[styles.matrixNameLabel, {color: theme.sub, width: 80}]}>NAME</Text>
@@ -483,7 +544,7 @@ export default function App() {
               </View>
             </View>
             {personKeys.map(pk => {
-              const eingeteilteFeiertage = wochentagFeiertage.filter(s => s[pk] !== '—').length;
+              const eingeteilteFeiertage = feiertageOhneSonntag.filter(s => s[pk] !== '—').length;
               const prozent = moeglicheFeiertageAnzahl > 0 ? Math.round((100 / moeglicheFeiertageAnzahl) * eingeteilteFeiertage) : 0;
               return (
                 <View key={pk} style={[styles.matrixRow, {borderBottomColor: theme.bor}]}>
@@ -506,13 +567,13 @@ export default function App() {
               </View>
             </View>
             {personKeys.map(pk => {
-              const total = filteredShifts.filter(s => s[pk] !== '—').length;
+              const total = statisticsShifts.filter(s => s[pk] !== '—').length;
               return (
                 <View key={pk} style={[styles.matrixRow, {borderBottomColor: theme.bor}]}>
                   <Text style={[styles.matrixName, {color: theme.txt, width: 55}]} numberOfLines={1}>{personNames[pk]}</Text>
                   <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-between'}}>
                     {schichtTypen.map((t, i) => {
-                      const count = filteredShifts.filter(s => s[pk] === t.l).length;
+                      const count = statisticsShifts.filter(s => s[pk] === t.l).length;
                       const p = total > 0 ? Math.round((count/total)*100) : 0;
                       return (<View key={i} style={{width: colWidth, alignItems: 'center'}}><Text style={[styles.matrixCellTxt, {color: p > 0 ? theme.txt : '#ccc'}]}>{p > 0 ? `${p}%` : '·'}</Text></View>);
                     })}
@@ -532,7 +593,7 @@ export default function App() {
             </View>
             {personKeys.map(pk => {
               let afterFreeShifts = [];
-              filteredShifts.forEach((s, idx) => {
+              statisticsShifts.forEach((s, idx) => {
                 const absIdx = rangeStartIdx + idx;
                 if (absIdx > 0 && shifts[absIdx - 1][pk] === '—' && s[pk] !== '—') afterFreeShifts.push(s[pk]);
               });
@@ -566,8 +627,8 @@ export default function App() {
                       <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around'}}>
                           {personKeys.map(p2 => {
                               if (p1 === p2) return <Text key={p2} style={{width: 22, textAlign: 'center', color: '#ccc', fontSize: 8}}>--</Text>;
-                              const common = filteredShifts.filter(s => ((s[p1] === 'SV' && s[p2] === 'PDI') || (s[p1] === 'PDI' && s[p2] === 'SV'))).length;
-                              const p1T = filteredShifts.filter(s => (s[p1] === 'SV' || s[p1] === 'PDI')).length;
+                              const common = statisticsShifts.filter(s => ((s[p1] === 'SV' && s[p2] === 'PDI') || (s[p1] === 'PDI' && s[p2] === 'SV'))).length;
+                              const p1T = statisticsShifts.filter(s => (s[p1] === 'SV' || s[p1] === 'PDI')).length;
                               const perc = p1T > 0 ? Math.round((common/p1T)*100) : 0;
                               return (<Text key={p2} style={{width: 22, textAlign: 'center', fontSize: 8, fontWeight: 'bold', color: perc > 0 ? theme.txt : '#ddd'}}>{perc > 0 ? perc : '·'}</Text>);
                           })}
@@ -593,7 +654,7 @@ export default function App() {
                                   let pdiOnPrevDayCount = 0;
                                   let totalSvOnCurrentDays = 0;
 
-                                  filteredShifts.forEach((s, idx) => {
+                                  statisticsShifts.forEach((s, idx) => {
                                       const absoluteIdx = rangeStartIdx + idx;
                                       if (s[pSv] === 'SV' && absoluteIdx > 0) {
                                           totalSvOnCurrentDays++;
@@ -619,8 +680,8 @@ export default function App() {
               <View style={{flexDirection: 'row', flex: 1, justifyContent: 'space-around'}}><Text style={[styles.miniBoxTxt, {color: '#e91e63', fontWeight: 'bold'}]}>SAMSTAG</Text><Text style={[styles.miniBoxTxt, {color: '#e91e63', fontWeight: 'bold'}]}>SONNTAG</Text></View>
             </View>
             {personKeys.map(pk => {
-              const saS = filteredShifts.filter(s => s.tag === 'Sa' && s[pk] !== '—');
-              const soS = filteredShifts.filter(s => s.tag === 'So' && s[pk] !== '—');
+              const saS = statisticsShifts.filter(s => s.tag === 'Sa' && s[pk] !== '—');
+              const soS = statisticsShifts.filter(s => s.tag === 'So' && s[pk] !== '—');
               const saP = saS.length > 0 ? Math.round((saS.filter(s => s[pk] === 'SV').length / saS.length) * 100) : 0;
               const soP = soS.length > 0 ? Math.round((soS.filter(s => s[pk] === 'SV').length / soS.length) * 100) : 0;
               return (
@@ -680,15 +741,15 @@ export default function App() {
       {activeTab === 'Schichten' ? (
         <View style={{flex: 1}}>
           <View style={[styles.searchFilterContainer, {backgroundColor: theme.card, borderBottomColor: theme.bor}]}>
-            <TouchableOpacity style={styles.searchBarButton} onPress={() => setSearchModalVisible(true)}>
-              <Ionicons name="search-outline" size={15} color={theme.acc} style={{marginRight: 6}} />
+            <TouchableOpacity style={styles.searchBarButton} onPress={() => { setFilterStartRaw(''); setFilterEndRaw(''); setSearchModalVisible(true); }}>
+              <Ionicons name="calendar-outline" size={15} color={theme.acc} style={{marginRight: 6}} />
               <Text style={[styles.searchText, {color: theme.txt}]} numberOfLines={1}>
                 Zeitraum: <Text style={{color: theme.acc, fontWeight: 'bold'}}>{filterDisplayTitle}</Text>
               </Text>
             </TouchableOpacity>
             
-            {selectedMonthFilter !== '' && (
-              <TouchableOpacity style={styles.clearFilterBtn} onPress={() => setSelectedMonthFilter('')}>
+            {activeFilterRange !== null && (
+              <TouchableOpacity style={styles.clearFilterBtn} onPress={() => setActiveFilterRange(null)}>
                 <Ionicons name="close-circle" size={18} color="#e91e63" />
               </TouchableOpacity>
             )}
@@ -723,7 +784,7 @@ export default function App() {
           {/* PERFEKT SYNCHRONISIERTE ZWEI-SPALTEN-STRUKTUR */}
           <View style={{flex: 1}}>
             
-            {/* OBERE KOPFZEILE: Links "TAG" (fest), Rechts Namen (scrollt horizontal synchron mit Schichten) */}
+            {/* OBERE KOPFZEILE: Links "TAG" (fest), Rechts Namen */}
             <View style={{height: 45, flexDirection: 'row', backgroundColor: theme.head, zIndex: 30, elevation: 20}}>
               <View style={[styles.headerSideCell, {backgroundColor: theme.head, height: 45}]}>
                 <Text style={styles.headLabel}>TAG</Text>
@@ -752,7 +813,7 @@ export default function App() {
             {/* HAUPTBEREICH UNTER DER KOPFZEILE */}
             <View style={{flex: 1, flexDirection: 'row'}}>
               
-              {/* 1. LINKE SPALTE: Datum (Scrollt vertikal exakt synchron über dateScrollRef) */}
+              {/* 1. LINKE SPALTE: Datum */}
               <View style={{width: 55, overflow: 'hidden', backgroundColor: theme.card}}>
                 <ScrollView 
                   ref={dateScrollRef}
@@ -796,7 +857,7 @@ export default function App() {
                 </ScrollView>
               </View>
 
-              {/* 2. RECHTER BEREICH: Schichten (Vertikaler Scroll steuert Datum; Horizontaler Scroll steuert die Namens-Kopfzeile) */}
+              {/* 2. RECHTER BEREICH: Schichten */}
               <View style={{flex: 1}}>
                 <ScrollView 
                   ref={verticalScrollRef}
@@ -879,34 +940,45 @@ export default function App() {
         <TouchableOpacity style={styles.tab} onPress={() => setActiveTab('Statistik')}><Ionicons name="stats-chart" size={22} color={activeTab === 'Statistik' ? theme.acc : '#888'} /><Text style={{fontSize: 10, color: activeTab === 'Statistik' ? theme.acc : '#888', marginTop: 4}}>Statistik</Text></TouchableOpacity>
       </View>
 
+      {/* MODAL FÜR ZEITRAUM-EINGABE TTMMJJJJ */}
       <Modal visible={searchModalVisible} transparent animationType="fade">
         <View style={styles.modalBack}>
-          <View style={[styles.modalBox, {backgroundColor: theme.card, maxHeight: '70%'}]}>
-            <Text style={{color: theme.txt, fontWeight: 'bold', marginBottom: 15, textAlign: 'center'}}>Zeitraum auswählen</Text>
-            <ScrollView style={{marginBottom: 15}}>
-              <TouchableOpacity 
-                style={[styles.monthFilterItem, {borderBottomColor: theme.bor, backgroundColor: selectedMonthFilter === '' ? theme.bg : 'transparent'}]} 
-                onPress={() => { setSelectedMonthFilter(''); setSearchModalVisible(false); }}
-              >
-                <Text style={{color: theme.txt, fontWeight: 'bold'}}>Aktueller Monat (Automatisch)</Text>
+          <View style={[styles.modalBox, {backgroundColor: theme.card, padding: 20}]}>
+            <Text style={{color: theme.txt, fontWeight: 'bold', fontSize: 16, marginBottom: 5, textAlign: 'center'}}>Zeitraum eingeben</Text>
+            <Text style={{color: theme.sub, fontSize: 11, marginBottom: 15, textAlign: 'center'}}>Eingabe in TTMMJJJJ (Ausgabe: TT.MM.JJJJ)</Text>
+            
+            <Text style={{color: theme.sub, fontSize: 10, fontWeight: 'bold', marginBottom: 4}}>STARTDATUM (TTMMJJJJ)</Text>
+            <TextInput 
+              style={[styles.input, {color: theme.txt, borderBottomColor: theme.acc, fontSize: 18, marginBottom: 15, textAlign: 'center'}]} 
+              value={formatRawToDisplay(filterStartRaw)} 
+              onChangeText={(t) => handleStartRawChange(t, filterEndInputRef)} 
+              placeholder="01102026" 
+              placeholderTextColor="#666"
+              keyboardType="numeric"
+              maxLength={10}
+              autoFocus={true}
+            />
+
+            <Text style={{color: theme.sub, fontSize: 10, fontWeight: 'bold', marginBottom: 4}}>ENDDATUM (TTMMJJJJ)</Text>
+            <TextInput 
+              ref={filterEndInputRef}
+              style={[styles.input, {color: theme.txt, borderBottomColor: theme.acc, fontSize: 18, marginBottom: 20, textAlign: 'center'}]} 
+              value={formatRawToDisplay(filterEndRaw)} 
+              onChangeText={handleEndRawChange} 
+              placeholder="31032027" 
+              placeholderTextColor="#666"
+              keyboardType="numeric"
+              maxLength={10}
+            />
+
+            <View style={styles.modalButtonRowHorizontal}>
+              <TouchableOpacity style={[styles.saveBtn, {backgroundColor: '#9e9e9e', flex: 0.48}]} onPress={() => setSearchModalVisible(false)}>
+                <Text style={{color: 'white', fontWeight: 'bold'}}>Abbrechen</Text>
               </TouchableOpacity>
-              {availableMonths.map(mStr => {
-                const [m, y] = mStr.split('.');
-                const label = `${monate[parseInt(m) - 1]} ${y}`;
-                return (
-                  <TouchableOpacity 
-                    key={mStr} 
-                    style={[styles.monthFilterItem, {borderBottomColor: theme.bor, backgroundColor: selectedMonthFilter === mStr ? theme.bg : 'transparent'}]} 
-                    onPress={() => { setSelectedMonthFilter(mStr); setSearchModalVisible(false); }}
-                  >
-                    <Text style={{color: theme.txt}}>{label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-            <TouchableOpacity style={[styles.saveBtn, {backgroundColor: '#9e9e9e'}]} onPress={() => setSearchModalVisible(false)}>
-              <Text style={{color: 'white', fontWeight: 'bold'}}>Abbrechen</Text>
-            </TouchableOpacity>
+              <TouchableOpacity style={[styles.saveBtn, {backgroundColor: theme.acc, flex: 0.48}]} onPress={() => executeFilter(filterStartRaw, filterEndRaw)}>
+                <Text style={{color: 'white', fontWeight: 'bold'}}>Anwenden</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1007,20 +1079,6 @@ export default function App() {
                     >
                       <Ionicons name="airplane-outline" size={12} color="white" />
                       <Text style={{color: 'white', fontSize: 9, fontWeight: 'bold', marginTop: 1, textAlign: 'center'}} numberOfLines={1}>URLAUB</Text>
-                    </TouchableOpacity>
-                  </View>
-                  
-                  <View style={styles.optContainer}>
-                    <TouchableOpacity 
-                      style={[styles.opt, {backgroundColor: '#b71c1c', borderRadius: 12, width: '100%', margin: 0, paddingVertical: 4, justifyContent: 'center', alignItems: 'center'}]} 
-                      onPress={() => { 
-                        setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk+'Col']: 'krank'} : r)); 
-                        if (copyModeActive) { setCopiedValue({ label: 'KRANK', color: 'krank' }); }
-                        setModalVisible(false); 
-                      }}
-                    >
-                      <Ionicons name="medkit-outline" size={12} color="white" />
-                      <Text style={{color: 'white', fontSize: 9, fontWeight: 'bold', marginTop: 1, textAlign: 'center'}} numberOfLines={1}>KRANK</Text>
                     </TouchableOpacity>
                   </View>
 
@@ -1171,7 +1229,6 @@ const styles = StyleSheet.create({
   searchBarButton: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingVertical: 5, paddingHorizontal: 8, borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.04)', marginRight: 6 },
   searchText: { fontSize: 11, fontWeight: '500' },
   clearFilterBtn: { paddingRight: 6, justifyContent: 'center', alignItems: 'center' },
-  monthFilterItem: { paddingVertical: 14, paddingHorizontal: 10, borderBottomWidth: 0.5, width: '100%' },
   devCard: { borderWidth: 1, paddingVertical: 15, paddingHorizontal: 18, marginBottom: 30 },
   devRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
   devLabel: { fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
