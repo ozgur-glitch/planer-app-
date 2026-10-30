@@ -5,7 +5,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
 
-// Dynamische Hilfsfunktion zur Generierung von Jahren
 const generateDynamicYears = (personKeys, startYear = 2020, endYear = 2030) => {
   const yearData = [];
   const startDate = new Date(startYear, 0, 1);
@@ -46,7 +45,6 @@ export default function App() {
   const [selectingType, setSelectingType] = useState('start'); 
   const [manualDateText, setManualDateText] = useState('');
 
-  // Zeitraum-Filter per TTMMJJJJ Eingabe
   const [searchModalVisible, setSearchModalVisible] = useState(false);
   const [filterStartRaw, setFilterStartRaw] = useState('');
   const [filterEndRaw, setFilterEndRaw] = useState('');
@@ -175,7 +173,7 @@ export default function App() {
 
   const saveData = async () => {
     try { 
-      await AsyncStorage.setItem('@planer_nano_final_v65', JSON.stringify({
+      await AsyncStorage.setItem('@planer_nano_final_v66', JSON.stringify({
         shifts, personNames, isDarkMode, schichtTypen
       })); 
     } catch (e) {}
@@ -183,7 +181,7 @@ export default function App() {
 
   const loadData = async () => {
     try {
-      const saved = await AsyncStorage.getItem('@planer_nano_final_v65');
+      const saved = await AsyncStorage.getItem('@planer_nano_final_v66');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed?.shifts && parsed.shifts.length > 0) { 
@@ -197,7 +195,6 @@ export default function App() {
     } catch (e) {}
   };
 
-  // DIREKTER ORDNER-AUSWAHL EXPORT (STORAGE ACCESS FRAMEWORK)
   const handleExportJsonFile = async () => {
     try {
       const exportPayload = { shifts, personNames, isDarkMode, schichtTypen };
@@ -231,7 +228,6 @@ export default function App() {
     }
   };
 
-  // JSON-DATEI IMPORT
   const handleImportJsonFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -554,7 +550,7 @@ export default function App() {
             </TouchableOpacity>
         </View>
 
-        <ScrollView style={{flex: 1}} removeClippedSubviews={true} contentContainerStyle={{padding: 10, paddingBottom: 220}}>
+        <ScrollView style={{flex: 1}} removeClippedSubviews={true} contentContainerStyle={{padding: 10, paddingBottom: 80}}>
           <View style={styles.calendarHeader}><Ionicons name="calendar-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Feiertagsstatistik (Mo–Sa) (%)</Text></View>
           <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
             <View style={[styles.matrixHeader, {borderBottomColor: theme.bor}]}>
@@ -717,7 +713,6 @@ export default function App() {
             })}
           </View>
 
-          {/* DATENSICHERUNG PER ORDNER-AUSWAHL */}
           <View style={[styles.statHeader, {marginTop: 0}]}><Ionicons name="cloud-upload-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Datensicherung (JSON-Datei)</Text></View>
           <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20}]}>
             <Text style={{color: theme.sub, fontSize: 11, marginBottom: 15, textAlign: 'center'}}>
@@ -811,10 +806,7 @@ export default function App() {
             </View>
           )}
 
-          {/* PERFEKT SYNCHRONISIERTE ZWEI-SPALTEN-STRUKTUR */}
           <View style={{flex: 1}}>
-            
-            {/* OBERE KOPFZEILE: Links "TAG" (fest), Rechts Namen */}
             <View style={{height: 45, flexDirection: 'row', backgroundColor: theme.head, zIndex: 30, elevation: 20}}>
               <View style={[styles.headerSideCell, {backgroundColor: theme.head, height: 45}]}>
                 <Text style={styles.headLabel}>TAG</Text>
@@ -840,16 +832,13 @@ export default function App() {
               </ScrollView>
             </View>
 
-            {/* HAUPTBEREICH UNTER DER KOPFZEILE */}
             <View style={{flex: 1, flexDirection: 'row'}}>
-              
-              {/* 1. LINKE SPALTE: Datum */}
               <View style={{width: 55, overflow: 'hidden', backgroundColor: theme.card}}>
                 <ScrollView 
                   ref={dateScrollRef}
                   scrollEnabled={false}
                   showsVerticalScrollIndicator={false}
-                  contentContainerStyle={{paddingBottom: 220}}
+                  contentContainerStyle={{paddingBottom: 80}}
                 >
                   {currentMonthShifts.map((s, index) => {
                     const prevS = index > 0 ? currentMonthShifts[index-1] : null;
@@ -887,12 +876,11 @@ export default function App() {
                 </ScrollView>
               </View>
 
-              {/* 2. RECHTER BEREICH: Schichten */}
               <View style={{flex: 1}}>
                 <ScrollView 
                   ref={verticalScrollRef}
                   style={{flex: 1}}
-                  contentContainerStyle={{paddingBottom: 220}}
+                  contentContainerStyle={{paddingBottom: 80}}
                   showsVerticalScrollIndicator={true}
                   onScroll={(e) => {
                     const offsetY = e.nativeEvent.contentOffset.y;
@@ -970,7 +958,6 @@ export default function App() {
         <TouchableOpacity style={styles.tab} onPress={() => setActiveTab('Statistik')}><Ionicons name="stats-chart" size={22} color={activeTab === 'Statistik' ? theme.acc : '#888'} /><Text style={{fontSize: 10, color: activeTab === 'Statistik' ? theme.acc : '#888', marginTop: 4}}>Statistik</Text></TouchableOpacity>
       </View>
 
-      {/* MODAL FÜR ZEITRAUM-EINGABE TTMMJJJJ */}
       <Modal visible={searchModalVisible} transparent animationType="fade">
         <View style={styles.modalBack}>
           <View style={[styles.modalBox, {backgroundColor: theme.card, padding: 20}]}>
@@ -1255,7 +1242,7 @@ const styles = StyleSheet.create({
   paletteCircle: { width: 32, height: 32, borderRadius: 16 },
   divider: { height: 1, width: '100%', marginVertical: 12 },
   searchFilterContainer: { flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center', borderBottomWidth: 1, flexWrap: 'nowrap' },
-  searchBarButton: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingVertical: '5%', paddingHorizontal: 8, borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.04)', marginRight: 6 },
+  searchBarButton: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingVertical: 5, paddingHorizontal: 8, borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.04)', marginRight: 6 },
   searchText: { fontSize: 11, fontWeight: '500' },
   clearFilterBtn: { paddingRight: 6, justifyContent: 'center', alignItems: 'center' },
   devCard: { borderWidth: 1, paddingVertical: 15, paddingHorizontal: 18, marginBottom: 30 },
