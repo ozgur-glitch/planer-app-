@@ -2,8 +2,8 @@
   "expo": {
     "name": "Schichtplaner",
     "slug": "schichtplaner",
-    "owner": "ceozs-team",
-    "version": "3.0.3",
+    "owner": "ctn.ogr",
+    "version": "3.0.4",
     "orientation": "portrait",
     "icon": "./icon.png", 
     "userInterfaceStyle": "light",
@@ -24,7 +24,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "e54d0f75-dd8f-4989-a26b-85f5a1ca66b1"
+        "projectId": "2232ef5a-eb4f-431b-b84b-ae249a291b5e"
       }
     }
   }
