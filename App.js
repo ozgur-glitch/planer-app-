@@ -35,6 +35,7 @@ export default function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [nameModalVisible, setNameModalVisible] = useState(false);
+  const [manualModalVisible, setManualModalVisible] = useState(false);
   const [selectedCell, setSelectedCell] = useState(null);
   const [selectedPersonKey, setSelectedPersonKey] = useState(null);
   const [tempName, setTempName] = useState('');
@@ -63,51 +64,28 @@ export default function App() {
     '#F57F17', '#00838F', '#455A64', '#8D6E63', '#EC407A', '#558B2F'
   ];
 
-  const initialNames = { p1: 'P1', p2: 'Paul', p3: 'P3', p4: 'P4', p5: 'P5', p6: 'P6', p7: 'P7', p8: 'P8', p9: 'P9', p10: 'P10' };
+  // Standardmäßig auf P2 statt Paul gesetzt
+  const initialNames = { p1: 'P1', p2: 'P2', p3: 'P3', p4: 'P4', p5: 'P5', p6: 'P6', p7: 'P7', p8: 'P8', p9: 'P9', p10: 'P10' };
   const [personNames, setPersonNames] = useState(initialNames);
   const personKeys = Object.keys(initialNames);
   const monate = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 
   const [schichtTypen, setSchichtTypen] = useState([
-    {l:'SV',  c:'#C62828', s:'06:00', e:'14:00', p:'30'},
-    {l:'PDI', c:'#2E7D32', s:'06:00', e:'14:00', p:'30'},
-    {l:'QS',  c:'#EF6C00', s:'07:00', e:'15:30', p:'30'},
-    {l:'STL', c:'#1565C0', s:'07:00', e:'15:30', p:'30'},
-    {l:'FHR', c:'#6A1B9A', s:'07:00', e:'15:30', p:'30'},
-    {l:'FD',  c:'#4A148C', s:'06:00', e:'14:30', p:'30'},
-    {l:'SD',  c:'#00838F', s:'13:30', e:'22:00', p:'30'},
-    {l:'QC',  c:'#AD1457', s:'07:00', e:'15:30', p:'30'},
-    {l:'TS',  c:'#64DD17', s:'07:30', e:'16:00', p:'30'},
-    {l:'HRS', c:'#EC407A', s:'08:00', e:'16:30', p:'30'}
+    {l:'SV',  c:'#C62828'},
+    {l:'PDI', c:'#2E7D32'},
+    {l:'QS',  c:'#EF6C00'},
+    {l:'STL', c:'#1565C0'},
+    {l:'FHR', c:'#6A1B9A'},
+    {l:'FD',  c:'#4A148C'},
+    {l:'SD',  c:'#00838F'},
+    {l:'QC',  c:'#AD1457'},
+    {l:'TS',  c:'#64DD17'},
+    {l:'HRS', c:'#EC407A'}
   ]);
-
-  const [editingSchichtIdx, setEditingSchichtIdx] = useState(null);
-  const [editStartTime, setEditStartTime] = useState('');
-  const [editEndTime, setEditEndTime] = useState('');
-  const [editPauseTime, setEditPauseTime] = useState('');
-
-  const editEndRef = useRef(null);
-  const editPauseRef = useRef(null);
 
   const verticalScrollRef = useRef(null);
   const dateScrollRef = useRef(null);
   const horizontalHeaderRef = useRef(null);
-
-  const formatTimeHHMM = (text, setTimeState, nextFocusRef) => {
-    const cleaned = text.replace(/[^0-9]/g, '');
-    if (cleaned.length <= 4) {
-      if (cleaned.length === 4) {
-        const hh = cleaned.substring(0, 2);
-        const mm = cleaned.substring(2, 4);
-        setTimeState(`${hh}:${mm}`);
-        if (nextFocusRef && nextFocusRef.current) {
-          nextFocusRef.current.focus();
-        }
-      } else {
-        setTimeState(cleaned);
-      }
-    }
-  };
 
   const getHessenFeiertage = (jahr) => {
     const f = Math.floor, a = jahr % 19, b = f(jahr / 100), c = jahr % 100,
@@ -173,7 +151,7 @@ export default function App() {
 
   const saveData = async () => {
     try { 
-      await AsyncStorage.setItem('@planer_nano_final_v66', JSON.stringify({
+      await AsyncStorage.setItem('@planer_nano_final_v67', JSON.stringify({
         shifts, personNames, isDarkMode, schichtTypen
       })); 
     } catch (e) {}
@@ -181,7 +159,7 @@ export default function App() {
 
   const loadData = async () => {
     try {
-      const saved = await AsyncStorage.getItem('@planer_nano_final_v66');
+      const saved = await AsyncStorage.getItem('@planer_nano_final_v67');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed?.shifts && parsed.shifts.length > 0) { 
@@ -503,28 +481,8 @@ export default function App() {
     } else {
       setSelectedCell({ rowId, pk });
       setCustomLabel('');
-      setEditingSchichtIdx(null); 
       setModalVisible(true);
     }
-  };
-
-  const startEditSchichtTimes = (idx, schicht) => {
-    setEditingSchichtIdx(idx);
-    setEditStartTime('');
-    setEditEndTime('');
-    setEditPauseTime('');
-  };
-
-  const saveSchichtTimes = (idx) => {
-    const updated = [...schichtTypen];
-    updated[idx] = {
-      ...updated[idx],
-      s: editStartTime || updated[idx].s,
-      e: editEndTime || updated[idx].e,
-      p: editPauseTime || updated[idx].p
-    };
-    setSchichtTypen(updated);
-    setEditingSchichtIdx(null);
   };
 
   const renderStatistik = () => {
@@ -728,6 +686,14 @@ export default function App() {
                 <Text style={styles.btnTxt}>Importieren</Text>
               </TouchableOpacity>
             </View>
+          </View>
+
+          {/* BENUTZERHANDBUCH BUTTON */}
+          <View style={[styles.statHeader, {marginTop: 5}]}><Ionicons name="book-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>Hilfe & Handbuch</Text></View>
+          <View style={[styles.matrixCard, {backgroundColor: theme.card, marginBottom: 20, padding: 15}]}>
+            <TouchableOpacity style={[styles.saveBtn, {backgroundColor: theme.acc}]} onPress={() => setManualModalVisible(true)}>
+              <Text style={{color: 'white', fontWeight: 'bold'}}>Benutzerhandbuch öffnen</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={[styles.statHeader, {marginTop: 5}]}><Ionicons name="information-circle-outline" size={18} color={theme.acc} /><Text style={[styles.statTitle, {color: theme.txt}]}>App-Informationen</Text></View>
@@ -1027,6 +993,44 @@ export default function App() {
           </View>
       </Modal>
 
+      {/* BENUTZERHANDBUCH MODAL */}
+      <Modal visible={manualModalVisible} transparent animationType="slide">
+        <View style={styles.modalBack}>
+          <View style={[styles.modalBox, {backgroundColor: theme.card, width: '90%', maxHeight: '80%'}]}>
+            <Text style={{color: theme.txt, fontWeight: 'bold', fontSize: 18, marginBottom: 12, textAlign: 'center'}}>Benutzerhandbuch</Text>
+            <ScrollView showsVerticalScrollIndicator={true} contentContainerStyle={{paddingBottom: 20}}>
+              <Text style={{color: theme.acc, fontWeight: 'bold', fontSize: 14, marginTop: 8}}>1. Schichten eintragen</Text>
+              <Text style={{color: theme.txt, fontSize: 12, lineHeight: 18, marginTop: 2}}>
+                Tippe im Reiter "Schichten" auf eine beliebige Zelle in der Tabelle. Es öffnet sich ein Auswahlfenster, in dem du eine voreingestellte Schicht (z.B. SV, PDI), Urlaub (URL) oder Frei (—) zuweisen kannst.
+              </Text>
+
+              <Text style={{color: theme.acc, fontWeight: 'bold', fontSize: 14, marginTop: 12}}>2. Eigene Schichten erstellen</Text>
+              <Text style={{color: theme.txt, fontSize: 12, lineHeight: 18, marginTop: 2}}>
+                Im Schicht-Auswahlfenster kannst du ganz oben im Textfeld ein eigenes Kürzel eingeben, eine Wunschfarbe aus der Palette wählen und auf "Einfügen" tippen.
+              </Text>
+
+              <Text style={{color: theme.acc, fontWeight: 'bold', fontSize: 14, marginTop: 12}}>3. Namen anpassen</Text>
+              <Text style={{color: theme.txt, fontSize: 12, lineHeight: 18, marginTop: 2}}>
+                Tippe oben in der Kopfzeile auf den Namen einer Person (z.B. P1, P2), um ihn direkt umzubenennen.
+              </Text>
+
+              <Text style={{color: theme.acc, fontWeight: 'bold', fontSize: 14, marginTop: 12}}>4. Zeitraum-Filter & Suche</Text>
+              <Text style={{color: theme.txt, fontSize: 12, lineHeight: 18, marginTop: 2}}>
+                Über den Zeitraum-Button oben kannst du gezielt einen Datumsbereich (im Format TTMMJJJJ) filtern, um die Ansicht und Statistiken einzuschränken.
+              </Text>
+
+              <Text style={{color: theme.acc, fontWeight: 'bold', fontSize: 14, marginTop: 12}}>5. Backup (Export & Import)</Text>
+              <Text style={{color: theme.txt, fontSize: 12, lineHeight: 18, marginTop: 2}}>
+                Wechsle in den "Statistik"-Reiter. Ganz unten findest du die Datensicherung. Mit "Exportieren" wählst du einen Ordner auf deinem Handy aus, wo die Backup-Datei sicher gespeichert wird. Über "Importieren" kannst du Daten jederzeit wiederherstellen.
+              </Text>
+            </ScrollView>
+            <TouchableOpacity style={[styles.saveBtn, {backgroundColor: theme.acc, marginTop: 15}]} onPress={() => setManualModalVisible(false)}>
+              <Text style={{color: 'white', fontWeight: 'bold'}}>Schließen</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={modalVisible} transparent animationType="fade">
         <View style={styles.modalBack}>
           <View style={[styles.modalBox, {backgroundColor: theme.card, width: '95%', padding: 15, maxHeight: '85%'}]}>
@@ -1058,116 +1062,51 @@ export default function App() {
 
               <View style={[styles.divider, {backgroundColor: theme.bor}]} />
 
-              <Text style={{color: theme.sub, fontSize: 11, fontWeight: 'bold', marginBottom: 8}}>VORGEFERTIGTE SCHICHTEN (Zelle antippen / Uhr bearbeiten)</Text>
+              <Text style={{color: theme.sub, fontSize: 11, fontWeight: 'bold', marginBottom: 8}}>VORGEFERTIGTE SCHICHTEN</Text>
               <View style={styles.modalGrid}>
                   {schichtTypen.map((s, i) => (
                     <View key={i} style={styles.optContainer}>
                       <TouchableOpacity 
-                        style={[styles.opt, {backgroundColor: s.c, borderRadius: 12, width: '100%', margin: 0, paddingVertical: 4}]} 
+                        style={[styles.opt, {backgroundColor: s.c, borderRadius: 12, width: '100%', margin: 0, paddingVertical: 8}]} 
                         onPress={() => { 
                           setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: s.l, [selectedCell.pk+'Col']: s.c} : r)); 
                           if (copyModeActive) { setCopiedValue({ label: s.l, color: s.c }); }
                           setModalVisible(false); 
                         }}
                       >
-                        <Text style={{color: 'white', fontWeight: 'bold', fontSize: 10, textAlign: 'center'}} numberOfLines={1}>{s.l}</Text>
-                        <Text style={{color: 'rgba(255,255,255,0.8)', fontSize: 7, marginTop: 1, textAlign: 'center'}} numberOfLines={1}>
-                          {s.s || '—'}-{s.e || '—'}
-                        </Text>
-                      </TouchableOpacity>
-                      
-                      <TouchableOpacity 
-                        style={styles.timeEditIconBtn} 
-                        onPress={() => startEditSchichtTimes(i, s)}
-                      >
-                        <Ionicons name="time-outline" size={14} color={theme.acc} />
+                        <Text style={{color: 'white', fontWeight: 'bold', fontSize: 11, textAlign: 'center'}} numberOfLines={1}>{s.l}</Text>
                       </TouchableOpacity>
                     </View>
                   ))}
 
                   <View style={styles.optContainer}>
                     <TouchableOpacity 
-                      style={[styles.opt, {backgroundColor: '#00bcd4', borderRadius: 12, width: '100%', margin: 0, paddingVertical: 4, justifyContent: 'center', alignItems: 'center'}]} 
+                      style={[styles.opt, {backgroundColor: '#00bcd4', borderRadius: 12, width: '100%', margin: 0, paddingVertical: 8, justifyContent: 'center', alignItems: 'center'}]} 
                       onPress={() => { 
                         setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: 'URL', [selectedCell.pk+'Col']: '#00bcd4'} : r));
                         if (copyModeActive) { setCopiedValue({ label: 'URL', color: '#00bcd4' }); }
                         setModalVisible(false);
                       }}
                     >
-                      <Ionicons name="airplane-outline" size={12} color="white" />
-                      <Text style={{color: 'white', fontSize: 9, fontWeight: 'bold', marginTop: 1, textAlign: 'center'}} numberOfLines={1}>URLAUB</Text>
+                      <Ionicons name="airplane-outline" size={14} color="white" />
+                      <Text style={{color: 'white', fontSize: 9, fontWeight: 'bold', marginTop: 1, textAlign: 'center'} } numberOfLines={1}>URLAUB</Text>
                     </TouchableOpacity>
                   </View>
 
                   <View style={styles.optContainer}>
                     <TouchableOpacity 
-                      style={[styles.opt, {backgroundColor: isDarkMode ? '#2c2c2c' : '#f0f0f0', borderRadius: 12, borderWidth: 1, borderColor: isDarkMode ? '#444' : '#ddd', width: '100%', margin: 0, paddingVertical: 4, justifyContent: 'center', alignItems: 'center'}]} 
+                      style={[styles.opt, {backgroundColor: isDarkMode ? '#2c2c2c' : '#f0f0f0', borderRadius: 12, borderWidth: 1, borderColor: isDarkMode ? '#444' : '#ddd', width: '100%', margin: 0, paddingVertical: 8, justifyContent: 'center', alignItems: 'center'}]} 
                       onPress={() => { 
                         setShifts(shifts.map(r => r.id === selectedCell.rowId ? {...r, [selectedCell.pk]: '—', [selectedCell.pk+'Col']: 'transparent'} : r)); 
                         if (copyModeActive) { setCopiedValue({ label: '—', color: 'transparent' }); }
                         setModalVisible(false); 
                       }}
                     >
-                      <Ionicons name="remove-circle-outline" size={12} color={isDarkMode ? '#aaa' : '#888'} />
+                      <Ionicons name="remove-circle-outline" size={14} color={isDarkMode ? '#aaa' : '#888'} />
                       <Text style={{color: isDarkMode ? '#aaa' : '#888', fontSize: 9, fontWeight: 'bold', marginTop: 1, textAlign: 'center'}} numberOfLines={1}>FREI</Text>
                     </TouchableOpacity>
                   </View>
               </View>
-
-              {editingSchichtIdx !== null && (
-                <View style={[styles.timeEditBox, {backgroundColor: isDarkMode ? '#222' : '#f9f9f9', borderColor: theme.bor}]}>
-                  <Text style={{color: theme.txt, fontWeight: 'bold', fontSize: 12, marginBottom: 12}}>
-                    Zeiten für [{schichtTypen[editingSchichtIdx].l}] anpassen:
-                  </Text>
-                  <View style={styles.timeInputRow}>
-                    <View style={styles.timeInputWrapper}>
-                      <Text style={styles.timeInputSubLabel}>Start</Text>
-                      <TextInput 
-                        style={[styles.timeTextInput, {color: theme.txt, borderColor: theme.bor}]} 
-                        value={editStartTime} 
-                        onChangeText={(t) => formatTimeHHMM(t, setEditStartTime, editEndRef)} 
-                        placeholder="06:00" 
-                        placeholderTextColor="#777"
-                        keyboardType="numeric"
-                        maxLength={5}
-                      />
-                    </View>
-                    <View style={styles.timeInputWrapper}>
-                      <Text style={styles.timeInputSubLabel}>Ende</Text>
-                      <TextInput 
-                        ref={editEndRef}
-                        style={[styles.timeTextInput, {color: theme.txt, borderColor: theme.bor}]} 
-                        value={editEndTime} 
-                        onChangeText={(t) => formatTimeHHMM(t, setEditEndTime, editPauseRef)} 
-                        placeholder="14:30" 
-                        placeholderTextColor="#777"
-                        keyboardType="numeric"
-                        maxLength={5}
-                      />
-                    </View>
-                    <View style={styles.timeInputWrapper}>
-                      <Text style={styles.timeInputSubLabel}>Pause (Min)</Text>
-                      <TextInput 
-                        ref={editPauseRef}
-                        style={[styles.timeTextInput, {color: theme.txt, borderColor: theme.bor}]} 
-                        value={editPauseTime} 
-                        onChangeText={setEditPauseTime} 
-                        placeholder="30" 
-                        placeholderTextColor="#777"
-                        keyboardType="numeric"
-                      />
-                    </View>
-                  </View>
-                  <View style={styles.timeActionRow}>
-                    <TouchableOpacity style={[styles.timeBtnSmall, {backgroundColor: '#9e9e9e', marginRight: 10}]} onPress={() => setEditingSchichtIdx(null)}>
-                      <Text style={{color: 'white', fontSize: 12, fontWeight: 'bold'}}>Abbrechen</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.timeBtnSmall, {backgroundColor: theme.acc}]} onPress={() => saveSchichtTimes(editingSchichtIdx)}>
-                      <Text style={{color: 'white', fontSize: 12, fontWeight: 'bold'}}>Speichern</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
 
               <TouchableOpacity onPress={() => setModalVisible(false)} style={{marginTop: 20, marginBottom: 10}}><Text style={{color: theme.acc, textAlign: 'center', fontWeight: 'bold'}}>Schließen</Text></TouchableOpacity>
             </ScrollView>
@@ -1193,7 +1132,6 @@ const styles = StyleSheet.create({
   headerSideCell: { width: 55, height: 45, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   headerCell: { width: 60, height: 45, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   headLabel: { color: 'white', fontSize: 11, fontWeight: 'bold', textAlign: 'center' },
-  monthLabel: { backgroundColor: '#1a1a1a', height: 30, justifyContent: 'center', paddingLeft: 10 },
   monthLabelTxt: { color: 'white', fontSize: 11, fontWeight: 'bold' },
   sideCell: { width: 55, height: 45, justifyContent: 'center', alignItems: 'center', borderBottomWidth: 1, flexShrink: 0 },
   cell: { width: 60, height: 45, justifyContent: 'center', alignItems: 'center', borderBottomWidth: 1, flexShrink: 0 },
@@ -1220,16 +1158,8 @@ const styles = StyleSheet.create({
   modalBack: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
   modalBox: { width: '85%', padding: 25, borderRadius: 24 },
   modalGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-start' },
-  optContainer: { width: '22%', aspectRatio: 1, margin: '1.5%', position: 'relative', justifyContent: 'center', alignItems: 'center' },
-  opt: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 2 },
-  timeEditIconBtn: { position: 'absolute', right: 2, top: 2, backgroundColor: 'rgba(255,255,255,0.8)', borderRadius: 8, width: 16, height: 16, justifyContent: 'center', alignItems: 'center', elevation: 2 },
-  timeEditBox: { marginTop: 15, borderWidth: 1, borderRadius: 12, padding: 12 },
-  timeInputRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  timeInputWrapper: { flex: 1, marginHorizontal: 3 },
-  timeInputSubLabel: { fontSize: 10, color: '#888', marginBottom: 4, fontWeight: 'bold', textAlign: 'center' },
-  timeTextInput: { borderWidth: 1, borderRadius: 6, height: 36, paddingHorizontal: 4, fontSize: 12, textAlign: 'center' },
-  timeActionRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 14 },
-  timeBtnSmall: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 6 },
+  optContainer: { width: '30%', margin: '1.5%', justifyContent: 'center', alignItems: 'center' },
+  opt: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 2 },
   input: { borderBottomWidth: 2, fontSize: 22, textAlign: 'center', marginBottom: 15 },
   saveBtn: { paddingVertical: 12, paddingHorizontal: 10, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   modalButtonRowHorizontal: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', flexWrap: 'nowrap' },
