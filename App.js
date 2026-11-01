@@ -237,7 +237,7 @@ export default function App() {
     }
   };
 
-  // EXCEL DIENSTPLAN IMPORT FUNKTION (MIT GEFÄLLIGER TL_SPÄT / STL ERKENNUNG)
+  // EXCEL DIENSTPLAN IMPORT FUNKTION (MIT FAHRER >= 11:00 -> SD REGEL)
   const handleImportExcelFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -376,6 +376,12 @@ export default function App() {
         const lowerShift = shiftText.toLowerCase();
         const upperShift = shiftText.toUpperCase();
 
+        // Startstunde ermitteln für zeitabhängige Regeln
+        let startHour = -1;
+        if (plannedStart && plannedStart.includes(':')) {
+          startHour = parseInt(plannedStart.split(':')[0], 10);
+        }
+
         // 1. Frei-Prüfung
         if (lowerShift.includes('frei')) {
           shiftCode = '—';
@@ -387,11 +393,17 @@ export default function App() {
           const foundType = schichtTypen.find(t => t.l === 'STL');
           shiftColor = foundType ? foundType.c : '#1565C0';
         } 
-        // 3. FAHRER -> FHR
+        // 3. FAHRER -> FHR (WENN Startzeit nach 11:00 Uhr bzw. >= 11 Uhr, dann SD)
         else if (upperShift.includes('FAHRER')) {
-          shiftCode = 'FHR';
-          const foundType = schichtTypen.find(t => t.l === 'FHR');
-          shiftColor = foundType ? foundType.c : '#6A1B9A';
+          if (startHour >= 11) {
+            shiftCode = 'SD';
+            const foundType = schichtTypen.find(t => t.l === 'SD');
+            shiftColor = foundType ? foundType.c : '#00838F';
+          } else {
+            shiftCode = 'FHR';
+            const foundType = schichtTypen.find(t => t.l === 'FHR');
+            shiftColor = foundType ? foundType.c : '#6A1B9A';
+          }
         } 
         // 4. Standardschichten (SV, PDI, QS, QC, HRS etc.) direkt behalten
         else {
@@ -403,11 +415,6 @@ export default function App() {
           } 
           // 5. Keine Standardschicht -> Table 3 Startzeit-Regeln (FD / SD)
           else {
-            let startHour = -1;
-            if (plannedStart && plannedStart.includes(':')) {
-              startHour = parseInt(plannedStart.split(':')[0], 10);
-            }
-
             if (startHour >= 0 && startHour < 10) {
               // Vor 10:00 Uhr -> FD
               shiftCode = 'FD';
