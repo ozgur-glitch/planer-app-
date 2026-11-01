@@ -237,7 +237,7 @@ export default function App() {
     }
   };
 
-  // EXCEL DIENSTPLAN IMPORT FUNKTION (MIT EXakter Priorisierung)
+  // EXCEL DIENSTPLAN IMPORT FUNKTION (MIT GEFÄLLIGER TL_SPÄT / STL ERKENNUNG)
   const handleImportExcelFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -381,8 +381,8 @@ export default function App() {
           shiftCode = '—';
           shiftColor = 'transparent';
         } 
-        // 2. TL_SPÄT_IN -> STL
-        else if (upperShift.includes('TL_SPÄT_IN') || upperShift.includes('TL_SPA')) {
+        // 2. TL_SPÄT / TL_SPÃ„T / STL -> STL
+        else if (upperShift.includes('TL_SP') || upperShift.includes('STL')) {
           shiftCode = 'STL';
           const foundType = schichtTypen.find(t => t.l === 'STL');
           shiftColor = foundType ? foundType.c : '#1565C0';
