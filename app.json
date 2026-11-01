@@ -3,7 +3,7 @@
     "name": "Schichtplaner",
     "slug": "schichtplaner",
     "owner": "ctn.ogr",
-    "version": "3.0.7",
+    "version": "3.0.8",
     "orientation": "portrait",
     "icon": "./icon.png", 
     "userInterfaceStyle": "light",
