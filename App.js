@@ -237,7 +237,7 @@ export default function App() {
     }
   };
 
-  // EXCEL DIENSTPLAN IMPORT FUNKTION (MIT INTELLIGENTER NAMENSMATSCH-LOGIK)
+  // EXCEL DIENSTPLAN IMPORT FUNKTION (MIT TABLE 3 & TABLE 4 REGELN)
   const handleImportExcelFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -279,7 +279,7 @@ export default function App() {
         }
       }
 
-      // Extrahiere Monatsnummer und Jahr aus Table 1
+      // Extrahiere Monatsnummer und Jahr
       const monthMap = {
         'januar': '01', 'jan': '01', 'februar': '02', 'feb': '02', 'märz': '03', 'mar': '03',
         'april': '04', 'apr': '04', 'mai': '05', 'may': '05', 'juni': '06', 'jun': '06',
@@ -302,7 +302,7 @@ export default function App() {
         targetYearNum = yearMatch[0];
       }
 
-      // Extrahiere Name aus Table 2 (z.B. "Name: Gökce, Sertan")
+      // Extrahiere Name aus Table 2
       let extractedName = 'Mitarbeiter';
       if (personFullName.includes('Name:')) {
         const parts = personFullName.split('Name:');
@@ -313,7 +313,7 @@ export default function App() {
         extractedName = personFullName.split('\n')[0].trim();
       }
 
-      // INTELLIGENTE NAMENSSUCHE (Prüft ob z.B. "Gökce" in der App vorhanden ist)
+      // Intelligente Namenssuche
       let targetPk = null;
       const cleanExcelName = extractedName.toLowerCase();
       const excelLastName = cleanExcelName.split(',')[0].trim();
@@ -326,10 +326,16 @@ export default function App() {
         }
       }
 
-      // Falls kein passender Name gefunden wurde, nimm ersten unbenutzten Standard-Platzhalter
       if (!targetPk) {
         targetPk = personKeys.find(pk => personNames[pk].startsWith('P')) || 'p1';
         setPersonNames(prev => ({ ...prev, [targetPk]: extractedName }));
+      }
+
+      // Table 3 einlesen (für geplante Startzeiten)
+      let table3Data = [];
+      if (sheetNames.includes('Table 3')) {
+        const sheet3 = workbook.Sheets['Table 3'];
+        table3Data = XLSX.utils.sheet_to_json(sheet3, { header: 1 });
       }
 
       // Table 4: Schichten einlesen
@@ -344,42 +350,88 @@ export default function App() {
       let updatedShifts = [...shifts];
 
       for (let i = 1; i < data4.length; i++) {
-        const row = data4[i];
-        if (!row || row.length < 3) continue;
+        const row4 = data4[i];
+        if (!row4 || row4.length < 3) continue;
 
-        const dayNum = String(row[0]).trim();
-        const shiftText = String(row[2] || '').trim();
+        const rawDayNum = String(row4[0]).replace(/[^0-9]/g, '');
+        const shiftText = String(row4[2] || '').trim();
 
-        if (!dayNum || isNaN(dayNum)) continue;
+        if (!rawDayNum) continue;
 
-        const formattedDay = String(dayNum).padStart(2, '0');
+        const formattedDay = String(rawDayNum).padStart(2, '0');
         const dateStr = `${formattedDay}.${targetMonthNum}.${targetYearNum}`;
+
+        // Hole korrespondierende Startzeit aus Table 3
+        let plannedStart = '';
+        if (table3Data.length > i) {
+          const row3 = table3Data[i];
+          if (row3 && row3[2]) {
+            plannedStart = String(row3[2]).trim();
+          }
+        }
 
         let shiftCode = '—';
         let shiftColor = 'transparent';
 
         const lowerShift = shiftText.toLowerCase();
-        if (lowerShift.includes('frei')) {
+        const upperShift = shiftText.toUpperCase();
+
+        // Regel 1: TL_SPÄT_IN -> STL
+        if (upperShift.includes('TL_SPÄT_IN') || upperShift.includes('TL_SPA')) {
+          shiftCode = 'STL';
+          const foundType = schichtTypen.find(t => t.l === 'STL');
+          shiftColor = foundType ? foundType.c : '#1565C0';
+        } 
+        // Regel 2: FAHRER -> FHR
+        else if (upperShift.includes('FAHRER')) {
+          shiftCode = 'FHR';
+          const foundType = schichtTypen.find(t => t.l === 'FHR');
+          shiftColor = foundType ? foundType.c : '#6A1B9A';
+        } 
+        // Frei-Prüfung
+        else if (lowerShift.includes('frei')) {
           shiftCode = '—';
           shiftColor = 'transparent';
-        } else if (lowerShift.includes('sv')) {
-          shiftCode = 'SV';
-          shiftColor = '#C62828';
-        } else if (lowerShift.includes('pdi')) {
-          shiftCode = 'PDI';
-          shiftColor = '#2E7D32';
-        } else if (lowerShift.includes('qs')) {
-          shiftCode = 'QS';
-          shiftColor = '#EF6C00';
-        } else {
-          const match = shiftText.match(/\d+\s+([A-Z_]+)/);
-          if (match) {
-            shiftCode = match[1].split('/')[0];
-            const foundType = schichtTypen.find(t => t.l === shiftCode);
-            shiftColor = foundType ? foundType.c : '#1976d2';
-          } else if (shiftText.length > 0) {
-            shiftCode = shiftText.substring(0, 4).toUpperCase();
-            shiftColor = '#1976d2';
+        } 
+        // Regel 3: Table 3 Startzeit-Auswertung
+        else {
+          let startHour = -1;
+          if (plannedStart && plannedStart.includes(':')) {
+            startHour = parseInt(plannedStart.split(':')[0], 10);
+          }
+
+          if (startHour >= 0 && startHour < 10) {
+            // Start vor 10:00 Uhr -> FD
+            shiftCode = 'FD';
+            const foundType = schichtTypen.find(t => t.l === 'FD');
+            shiftColor = foundType ? foundType.c : '#4A148C';
+          } else if (startHour >= 11) {
+            // Start ab 11:00 Uhr -> SD
+            shiftCode = 'SD';
+            const foundType = schichtTypen.find(t => t.l === 'SD');
+            shiftColor = foundType ? foundType.c : '#00838F';
+          } else {
+            // Fallback auf Standard-Kürzel
+            if (upperShift.includes('SV')) {
+              shiftCode = 'SV';
+              shiftColor = '#C62828';
+            } else if (upperShift.includes('PDI')) {
+              shiftCode = 'PDI';
+              shiftColor = '#2E7D32';
+            } else if (upperShift.includes('QS')) {
+              shiftCode = 'QS';
+              shiftColor = '#EF6C00';
+            } else {
+              const match = shiftText.match(/\d+\s+([A-Z_]+)/);
+              if (match) {
+                shiftCode = match[1].split('/')[0];
+                const foundType = schichtTypen.find(t => t.l === shiftCode);
+                shiftColor = foundType ? foundType.c : '#1976d2';
+              } else if (shiftText.length > 0) {
+                shiftCode = shiftText.substring(0, 4).toUpperCase();
+                shiftColor = '#1976d2';
+              }
+            }
           }
         }
 
