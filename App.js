@@ -237,7 +237,7 @@ export default function App() {
     }
   };
 
-  // EXCEL DIENSTPLAN IMPORT FUNKTION (MIT TABLE 3 & TABLE 4 REGELN)
+  // EXCEL DIENSTPLAN IMPORT FUNKTION (MIT EXakter Priorisierung)
   const handleImportExcelFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -376,52 +376,50 @@ export default function App() {
         const lowerShift = shiftText.toLowerCase();
         const upperShift = shiftText.toUpperCase();
 
-        // Regel 1: TL_SPÄT_IN -> STL
-        if (upperShift.includes('TL_SPÄT_IN') || upperShift.includes('TL_SPA')) {
+        // 1. Frei-Prüfung
+        if (lowerShift.includes('frei')) {
+          shiftCode = '—';
+          shiftColor = 'transparent';
+        } 
+        // 2. TL_SPÄT_IN -> STL
+        else if (upperShift.includes('TL_SPÄT_IN') || upperShift.includes('TL_SPA')) {
           shiftCode = 'STL';
           const foundType = schichtTypen.find(t => t.l === 'STL');
           shiftColor = foundType ? foundType.c : '#1565C0';
         } 
-        // Regel 2: FAHRER -> FHR
+        // 3. FAHRER -> FHR
         else if (upperShift.includes('FAHRER')) {
           shiftCode = 'FHR';
           const foundType = schichtTypen.find(t => t.l === 'FHR');
           shiftColor = foundType ? foundType.c : '#6A1B9A';
         } 
-        // Frei-Prüfung
-        else if (lowerShift.includes('frei')) {
-          shiftCode = '—';
-          shiftColor = 'transparent';
-        } 
-        // Regel 3: Table 3 Startzeit-Auswertung
+        // 4. Standardschichten (SV, PDI, QS, QC, HRS etc.) direkt behalten
         else {
-          let startHour = -1;
-          if (plannedStart && plannedStart.includes(':')) {
-            startHour = parseInt(plannedStart.split(':')[0], 10);
-          }
+          const matchedStandardType = schichtTypen.find(t => upperShift.includes(t.l));
 
-          if (startHour >= 0 && startHour < 10) {
-            // Start vor 10:00 Uhr -> FD
-            shiftCode = 'FD';
-            const foundType = schichtTypen.find(t => t.l === 'FD');
-            shiftColor = foundType ? foundType.c : '#4A148C';
-          } else if (startHour >= 11) {
-            // Start ab 11:00 Uhr -> SD
-            shiftCode = 'SD';
-            const foundType = schichtTypen.find(t => t.l === 'SD');
-            shiftColor = foundType ? foundType.c : '#00838F';
-          } else {
-            // Fallback auf Standard-Kürzel
-            if (upperShift.includes('SV')) {
-              shiftCode = 'SV';
-              shiftColor = '#C62828';
-            } else if (upperShift.includes('PDI')) {
-              shiftCode = 'PDI';
-              shiftColor = '#2E7D32';
-            } else if (upperShift.includes('QS')) {
-              shiftCode = 'QS';
-              shiftColor = '#EF6C00';
+          if (matchedStandardType) {
+            shiftCode = matchedStandardType.l;
+            shiftColor = matchedStandardType.c;
+          } 
+          // 5. Keine Standardschicht -> Table 3 Startzeit-Regeln (FD / SD)
+          else {
+            let startHour = -1;
+            if (plannedStart && plannedStart.includes(':')) {
+              startHour = parseInt(plannedStart.split(':')[0], 10);
+            }
+
+            if (startHour >= 0 && startHour < 10) {
+              // Vor 10:00 Uhr -> FD
+              shiftCode = 'FD';
+              const foundType = schichtTypen.find(t => t.l === 'FD');
+              shiftColor = foundType ? foundType.c : '#4A148C';
+            } else if (startHour >= 11) {
+              // Ab 11:00 Uhr -> SD
+              shiftCode = 'SD';
+              const foundType = schichtTypen.find(t => t.l === 'SD');
+              shiftColor = foundType ? foundType.c : '#00838F';
             } else {
+              // Fallback
               const match = shiftText.match(/\d+\s+([A-Z_]+)/);
               if (match) {
                 shiftCode = match[1].split('/')[0];
