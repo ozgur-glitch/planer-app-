@@ -1,6 +1,6 @@
 {
   "name": "schichtplaner",
-  "version": "3.0.6",
+  "version": "3.0.7",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -16,6 +16,7 @@
     "expo-sharing": "~12.0.1",
     "expo-document-picker": "~12.0.2",
     "expo-font": "~12.0.9",
+    "xlsx": "^0.18.5",
     "react": "18.2.0",
     "react-native": "0.74.3"
   },

@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
+import * as XLSX from 'xlsx';
 
 const generateDynamicYears = (personKeys, startYear = 2020, endYear = 2030) => {
   const yearData = [];
@@ -64,7 +65,6 @@ export default function App() {
     '#F57F17', '#00838F', '#455A64', '#8D6E63', '#EC407A', '#558B2F'
   ];
 
-  // Standardmäßig auf P2 statt Paul gesetzt
   const initialNames = { p1: 'P1', p2: 'P2', p3: 'P3', p4: 'P4', p5: 'P5', p6: 'P6', p7: 'P7', p8: 'P8', p9: 'P9', p10: 'P10' };
   const [personNames, setPersonNames] = useState(initialNames);
   const personKeys = Object.keys(initialNames);
@@ -234,6 +234,168 @@ export default function App() {
       }
     } catch (e) {
       Alert.alert("Fehler beim Import", "Die Datei konnte nicht gelesen oder verarbeitet werden.");
+    }
+  };
+
+  // EXCEL DIENSTPLAN IMPORT FUNKTION
+  const handleImportExcelFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.ms-excel',
+          '*/*'
+        ],
+        copyToCacheDirectory: true
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      const fileUri = result.assets[0].uri;
+      const fileBase64 = await FileSystem.readAsStringAsync(fileUri, {
+        encoding: FileSystem.EncodingType.Base64
+      });
+
+      const workbook = XLSX.read(fileBase64, { type: 'base64' });
+
+      // Tabellen auslesen
+      const sheetNames = workbook.SheetNames;
+      
+      // Table 1: Monat & Jahr
+      let monthYearText = '';
+      if (sheetNames.includes('Table 1')) {
+        const sheet1 = workbook.Sheets['Table 1'];
+        const data1 = XLSX.utils.sheet_to_json(sheet1, { header: 1 });
+        if (data1.length > 0 && data1[0].length > 0) {
+          monthYearText = String(data1[0][0]);
+        }
+      }
+
+      // Table 2: Name & PN
+      let personFullName = '';
+      if (sheetNames.includes('Table 2')) {
+        const sheet2 = workbook.Sheets['Table 2'];
+        const data2 = XLSX.utils.sheet_to_json(sheet2, { header: 1 });
+        if (data2.length > 0 && data2[0].length > 0) {
+          personFullName = String(data2[0][0]);
+        }
+      }
+
+      // Extrahiere Monatsnummer und Jahr aus Table 1
+      const monthMap = {
+        'januar': '01', 'jan': '01', 'februar': '02', 'feb': '02', 'märz': '03', 'mar': '03',
+        'april': '04', 'apr': '04', 'mai': '05', 'may': '05', 'juni': '06', 'jun': '06',
+        'juli': '07', 'jul': '07', 'august': '08', 'aug': '08', 'september': '09', 'sep': '09',
+        'oktober': '10', 'okt': '10', 'oct': '10', 'november': '11', 'nov': '11', 'dezember': '12', 'dez': '12', 'dec': '12'
+      };
+
+      let targetMonthNum = '08';
+      let targetYearNum = '2026';
+
+      const lowerT1 = monthYearText.toLowerCase();
+      for (const [k, v] of Object.entries(monthMap)) {
+        if (lowerT1.includes(k)) {
+          targetMonthNum = v;
+          break;
+        }
+      }
+      const yearMatch = monthYearText.match(/\d{4}/);
+      if (yearMatch) {
+        targetYearNum = yearMatch[0];
+      }
+
+      // Extrahiere echten Namen aus Table 2 (z.B. "Name: Gökce, Sertan")
+      let extractedName = 'Mitarbeiter';
+      if (personFullName.includes('Name:')) {
+        const parts = personFullName.split('Name:');
+        if (parts.length > 1) {
+          extractedName = parts[1].split('\n')[0].trim();
+        }
+      } else if (personFullName.trim().length > 0) {
+        extractedName = personFullName.split('\n')[0].trim();
+      }
+
+      // Ordne den Namen der ersten Person (p1) zu oder suche ob er schon existiert
+      let targetPk = 'p1';
+      const existingKey = Object.keys(personNames).find(k => personNames[k].toLowerCase() === extractedName.toLowerCase());
+      if (existingKey) {
+        targetPk = existingKey;
+      } else {
+        // Weise es p1 zu und aktualisiere den Namen
+        setPersonNames(prev => ({ ...prev, p1: extractedName }));
+        targetPk = 'p1';
+      }
+
+      // Table 4: Schichten einlesen
+      if (!sheetNames.includes('Table 4')) {
+        Alert.alert("Hinweis", "Tabelle 'Table 4' wurde in der Excel-Datei nicht gefunden.");
+        return;
+      }
+
+      const sheet4 = workbook.Sheets['Table 4'];
+      const data4 = XLSX.utils.sheet_to_json(sheet4, { header: 1 });
+
+      let updatedShifts = [...shifts];
+
+      // Gehe Zeilen durch (ab Index 1, da Header in 0)
+      for (let i = 1; i < data4.length; i++) {
+        const row = data4[i];
+        if (!row || row.length < 3) continue;
+
+        const dayNum = String(row[0]).trim();
+        const shiftText = String(row[2] || '').trim();
+
+        if (!dayNum || isNaN(dayNum)) continue;
+
+        const formattedDay = String(dayNum).padStart(2, '0');
+        const dateStr = `${formattedDay}.${targetMonthNum}.${targetYearNum}`;
+
+        // Schicht-Kürzel ermitteln
+        let shiftCode = '—';
+        let shiftColor = 'transparent';
+
+        const lowerShift = shiftText.toLowerCase();
+        if (lowerShift.includes('frei')) {
+          shiftCode = '—';
+          shiftColor = 'transparent';
+        } else if (lowerShift.includes('sv')) {
+          shiftCode = 'SV';
+          shiftColor = '#C62828';
+        } else if (lowerShift.includes('pdi')) {
+          shiftCode = 'PDI';
+          shiftColor = '#2E7D32';
+        } else if (lowerShift.includes('qs')) {
+          shiftCode = 'QS';
+          shiftColor = '#EF6C00';
+        } else {
+          // Versuche das erste Wort oder Kürzel zu nehmen
+          const match = shiftText.match(/\d+\s+([A-Z_]+)/);
+          if (match) {
+            shiftCode = match[1].split('/')[0];
+            const foundType = schichtTypen.find(t => t.l === shiftCode);
+            shiftColor = foundType ? foundType.c : '#1976d2';
+          } else if (shiftText.length > 0) {
+            shiftCode = shiftText.substring(0, 4).toUpperCase();
+            shiftColor = '#1976d2';
+          }
+        }
+
+        // Finde den Tag im shifts-Array
+        const sIndex = updatedShifts.findIndex(s => s.datum === dateStr);
+        if (sIndex !== -1) {
+          updatedShifts[sIndex] = {
+            ...updatedShifts[sIndex],
+            [targetPk]: shiftCode,
+            [targetPk + 'Col']: shiftColor
+          };
+        }
+      }
+
+      setShifts(updatedShifts);
+      Alert.alert("Erfolg", `Dienstplan für ${extractedName} (${monthYearText}) erfolgreich importiert!`);
+
+    } catch (e) {
+      Alert.alert("Fehler beim Excel-Import", e.message);
     }
   };
 
@@ -676,7 +838,7 @@ export default function App() {
             <Text style={{color: theme.sub, fontSize: 11, marginBottom: 15, textAlign: 'center'}}>
               Wähle einen Ordner auf deinem Smartphone zum Speichern oder lade ein Backup hoch.
             </Text>
-            <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+            <View style={{flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12}}>
               <TouchableOpacity style={[styles.backupBtn, {backgroundColor: '#4caf50'}]} onPress={handleExportJsonFile}>
                 <Ionicons name="download-outline" size={16} color="white" style={{marginBottom: 4}} />
                 <Text style={styles.btnTxt}>Exportieren</Text>
@@ -686,6 +848,10 @@ export default function App() {
                 <Text style={styles.btnTxt}>Importieren</Text>
               </TouchableOpacity>
             </View>
+            <TouchableOpacity style={[styles.backupBtn, {backgroundColor: '#e65100', width: '100%', padding: 12, flexDirection: 'row', justifyContent: 'center', alignItems: 'center'}]} onPress={handleImportExcelFile}>
+              <Ionicons name="document-text-outline" size={16} color="white" style={{marginRight: 6}} />
+              <Text style={styles.btnTxt}>Excel-Dienstplan importieren (.xlsx)</Text>
+            </TouchableOpacity>
           </View>
 
           {/* BENUTZERHANDBUCH BUTTON */}
@@ -1014,14 +1180,14 @@ export default function App() {
                 Tippe oben in der Kopfzeile auf den Namen einer Person (z.B. P1, P2), um ihn direkt umzubenennen.
               </Text>
 
-              <Text style={{color: theme.acc, fontWeight: 'bold', fontSize: 14, marginTop: 12}}>4. Zeitraum-Filter & Suche</Text>
+              <Text style={{color: theme.acc, fontWeight: 'bold', fontSize: 14, marginTop: 12}}>4. Excel-Dienstplan importieren</Text>
               <Text style={{color: theme.txt, fontSize: 12, lineHeight: 18, marginTop: 2}}>
-                Über den Zeitraum-Button oben kannst du gezielt einen Datumsbereich (im Format TTMMJJJJ) filtern, um die Ansicht und Statistiken einzuschränken.
+                Im "Statistik"-Reiter findest du die Option "Excel-Dienstplan importieren (.xlsx)". Die App liest automatisch den Monat, den Namen der Person sowie die Schichten aus deiner Excel-Datei aus und trägt sie ein.
               </Text>
 
               <Text style={{color: theme.acc, fontWeight: 'bold', fontSize: 14, marginTop: 12}}>5. Backup (Export & Import)</Text>
               <Text style={{color: theme.txt, fontSize: 12, lineHeight: 18, marginTop: 2}}>
-                Wechsle in den "Statistik"-Reiter. Ganz unten findest du die Datensicherung. Mit "Exportieren" wählst du einen Ordner auf deinem Handy aus, wo die Backup-Datei sicher gespeichert wird. Über "Importieren" kannst du Daten jederzeit wiederherstellen.
+                Du kannst deine Daten jederzeit als JSON-Backup auf deinem Smartphone speichern oder wiederherstellen.
               </Text>
             </ScrollView>
             <TouchableOpacity style={[styles.saveBtn, {backgroundColor: theme.acc, marginTop: 15}]} onPress={() => setManualModalVisible(false)}>
