@@ -237,7 +237,7 @@ export default function App() {
     }
   };
 
-  // EXCEL DIENSTPLAN IMPORT FUNKTION
+  // EXCEL DIENSTPLAN IMPORT FUNKTION (MIT INTELLIGENTER NAMENSMATSCH-LOGIK)
   const handleImportExcelFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -257,8 +257,6 @@ export default function App() {
       });
 
       const workbook = XLSX.read(fileBase64, { type: 'base64' });
-
-      // Tabellen auslesen
       const sheetNames = workbook.SheetNames;
       
       // Table 1: Monat & Jahr
@@ -304,7 +302,7 @@ export default function App() {
         targetYearNum = yearMatch[0];
       }
 
-      // Extrahiere echten Namen aus Table 2 (z.B. "Name: Gökce, Sertan")
+      // Extrahiere Name aus Table 2 (z.B. "Name: Gökce, Sertan")
       let extractedName = 'Mitarbeiter';
       if (personFullName.includes('Name:')) {
         const parts = personFullName.split('Name:');
@@ -315,15 +313,23 @@ export default function App() {
         extractedName = personFullName.split('\n')[0].trim();
       }
 
-      // Ordne den Namen der ersten Person (p1) zu oder suche ob er schon existiert
-      let targetPk = 'p1';
-      const existingKey = Object.keys(personNames).find(k => personNames[k].toLowerCase() === extractedName.toLowerCase());
-      if (existingKey) {
-        targetPk = existingKey;
-      } else {
-        // Weise es p1 zu und aktualisiere den Namen
-        setPersonNames(prev => ({ ...prev, p1: extractedName }));
-        targetPk = 'p1';
+      // INTELLIGENTE NAMENSSUCHE (Prüft ob z.B. "Gökce" in der App vorhanden ist)
+      let targetPk = null;
+      const cleanExcelName = extractedName.toLowerCase();
+      const excelLastName = cleanExcelName.split(',')[0].trim();
+
+      for (const pk of personKeys) {
+        const currentAppName = (personNames[pk] || '').toLowerCase();
+        if (currentAppName && (cleanExcelName.includes(currentAppName) || currentAppName.includes(excelLastName))) {
+          targetPk = pk;
+          break;
+        }
+      }
+
+      // Falls kein passender Name gefunden wurde, nimm ersten unbenutzten Standard-Platzhalter
+      if (!targetPk) {
+        targetPk = personKeys.find(pk => personNames[pk].startsWith('P')) || 'p1';
+        setPersonNames(prev => ({ ...prev, [targetPk]: extractedName }));
       }
 
       // Table 4: Schichten einlesen
@@ -337,7 +343,6 @@ export default function App() {
 
       let updatedShifts = [...shifts];
 
-      // Gehe Zeilen durch (ab Index 1, da Header in 0)
       for (let i = 1; i < data4.length; i++) {
         const row = data4[i];
         if (!row || row.length < 3) continue;
@@ -350,7 +355,6 @@ export default function App() {
         const formattedDay = String(dayNum).padStart(2, '0');
         const dateStr = `${formattedDay}.${targetMonthNum}.${targetYearNum}`;
 
-        // Schicht-Kürzel ermitteln
         let shiftCode = '—';
         let shiftColor = 'transparent';
 
@@ -368,7 +372,6 @@ export default function App() {
           shiftCode = 'QS';
           shiftColor = '#EF6C00';
         } else {
-          // Versuche das erste Wort oder Kürzel zu nehmen
           const match = shiftText.match(/\d+\s+([A-Z_]+)/);
           if (match) {
             shiftCode = match[1].split('/')[0];
@@ -380,7 +383,6 @@ export default function App() {
           }
         }
 
-        // Finde den Tag im shifts-Array
         const sIndex = updatedShifts.findIndex(s => s.datum === dateStr);
         if (sIndex !== -1) {
           updatedShifts[sIndex] = {
@@ -392,7 +394,7 @@ export default function App() {
       }
 
       setShifts(updatedShifts);
-      Alert.alert("Erfolg", `Dienstplan für ${extractedName} (${monthYearText}) erfolgreich importiert!`);
+      Alert.alert("Erfolg", `Dienstplan für "${personNames[targetPk] || extractedName}" (${monthYearText}) erfolgreich importiert!`);
 
     } catch (e) {
       Alert.alert("Fehler beim Excel-Import", e.message);
